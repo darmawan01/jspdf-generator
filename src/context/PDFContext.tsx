@@ -12,6 +12,11 @@ interface DraggableItem {
   borderStyle: string;
   borderColor: string;
   borderWidth: number;
+  fontSize?: number;
+  fontFamily?: string;
+  fontWeight?: string;
+  fontStyle?: string;
+  textAlign?: 'left' | 'center' | 'right';
 }
 
 interface PDFContextType {
@@ -19,7 +24,7 @@ interface PDFContextType {
   paperSize: string;
   orientation: 'portrait' | 'landscape';
   generatedCode: string;
-  addElement: (type: string, content: string, x: number, y: number) => void;
+  addElement: (type: string, content: string, x: number, y: number, styles?: Partial<DraggableItem>) => void;
   moveElement: (id: string, x: number, y: number) => void;
   resizeElement: (id: string, width: number, height: number) => void;
   updateElementStyle: (id: string, updates: Partial<DraggableItem>) => void;
@@ -44,19 +49,25 @@ export const PDFProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
   const [generatedCode, setGeneratedCode] = useState('');
 
-  const addElement = (type: string, content: string, x: number, y: number) => {
+  const addElement = (type: string, content: string, x: number, y: number, styles?: Partial<DraggableItem>) => {
     const newElement: DraggableItem = {
       id: Date.now().toString(),
       type,
       content,
       x: Math.max(0, x),
       y: Math.max(0, y),
-      width: 200,
-      height: 100,
+      width: type === 'text' ? 300 : 200,  // Wider default for text elements
+      height: type === 'text' ? 100 : 100,
       backgroundColor: 'white',
       borderStyle: 'dashed',
       borderColor: '#ccc',
       borderWidth: 1,
+      fontSize: styles?.fontSize || 16,
+      fontFamily: styles?.fontFamily || 'Arial',
+      fontWeight: styles?.fontWeight || 'normal',
+      fontStyle: styles?.fontStyle || 'normal',
+      textAlign: styles?.textAlign || 'left',
+      ...styles  // Allow overriding of any default values
     };
     setElements(prev => [...prev, newElement]);
   };

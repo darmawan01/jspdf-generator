@@ -1,8 +1,9 @@
 import React, { useRef, useEffect, useMemo } from 'react';
 import { useDrop } from 'react-dnd';
-import { Box, Paper, Typography, Select, MenuItem, FormControl, InputLabel, TextareaAutosize } from '@mui/material';
+import { Box, Paper, Typography, Select, MenuItem, FormControl, InputLabel, TextareaAutosize, Button } from '@mui/material';
 import { usePDFContext } from '../context/PDFContext';
 import DraggableElement from './DraggableElement';
+import { jsPDF } from 'jspdf';
 
 // Grid configuration
 const CELLS_X = 60; // For A4 width (595 points)
@@ -66,9 +67,9 @@ const PDFEditor: React.FC = () => {
     moveElement,
     resizeElement,
     updateElementStyle,
+    deleteElement,
     setPaperSize,
     setOrientation,
-    deleteElement,
   } = usePDFContext();
 
   const paperRef = useRef<HTMLDivElement>(null);
@@ -148,7 +149,18 @@ const PDFEditor: React.FC = () => {
 
   const [, drop] = useDrop({
     accept: ['tool', 'element'],
-    drop: (item: { id?: string; type: string; content: string; x?: number; y?: number }, monitor) => {
+    drop: (item: { 
+      id?: string; 
+      type: string; 
+      content: string; 
+      x?: number; 
+      y?: number;
+      fontSize?: number;
+      fontFamily?: string;
+      fontWeight?: string;
+      fontStyle?: string;
+      textAlign?: 'left' | 'center' | 'right';
+    }, monitor) => {
       const clientOffset = monitor.getClientOffset();
       if (!clientOffset || !paperRef.current) return;
 
@@ -167,7 +179,16 @@ const PDFEditor: React.FC = () => {
       console.log('DROP - Final position:', { boundedX, boundedY });
 
       if (!item.id) {
-        addElement(item.type, item.content, boundedX, boundedY);
+        // Extract typography styles from the dragged item
+        const styles = {
+          fontSize: item.fontSize,
+          fontFamily: item.fontFamily,
+          fontWeight: item.fontWeight,
+          fontStyle: item.fontStyle,
+          textAlign: item.textAlign,
+        };
+        
+        addElement(item.type, item.content, boundedX, boundedY, styles);
       }
 
       return { x: boundedX, y: boundedY };
@@ -197,6 +218,35 @@ const PDFEditor: React.FC = () => {
     }
   });
 
+  const handleExportPDF = () => {
+    const doc = new jsPDF({
+      orientation: orientation === 'landscape' ? 'l' : 'p',
+      unit: 'pt',
+      format: paperSize.toLowerCase(),
+    });
+
+    // Add elements to PDF
+    elements.forEach(element => {
+      if (element.type === 'text' || element.type === 'title') {
+        doc.setFont('helvetica');
+        doc.setFontSize(element.type === 'title' ? 16 : 12);
+        doc.text(element.content, element.x, element.y);
+      } else if (element.type === 'chart') {
+        // For charts, you would need to convert the canvas to an image
+        // This is a placeholder - you'll need to implement actual chart rendering
+        doc.rect(element.x, element.y, element.width, element.height);
+        doc.text('Chart Placeholder', element.x + 10, element.y + 20);
+      }
+    });
+
+    // Save the PDF
+    doc.save('generated.pdf');
+  };
+
+  const handleContentChange = (id: string, content: string) => {
+    updateElementStyle(id, { content });
+  };
+
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Top toolbar */}
@@ -224,6 +274,13 @@ const PDFEditor: React.FC = () => {
             <MenuItem value="landscape">Landscape</MenuItem>
           </Select>
         </FormControl>
+        <Button 
+          variant="contained" 
+          color="primary"
+          onClick={handleExportPDF}
+        >
+          Export PDF
+        </Button>
       </Box>
 
       {/* Main content area */}
@@ -275,6 +332,7 @@ const PDFEditor: React.FC = () => {
                 onResize={resizeElement}
                 onStyleChange={updateElementStyle}
                 onPositionChange={moveElement}
+                onContentChange={handleContentChange}
                 onDelete={deleteElement}
               />
             ))}

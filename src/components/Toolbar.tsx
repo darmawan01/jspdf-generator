@@ -1,20 +1,98 @@
 import React from 'react';
-import { Box, Paper, Typography } from '@mui/material';
+import { Box, Paper, Typography, Divider } from '@mui/material';
 import { useDrag } from 'react-dnd';
 import { ChartData } from 'chart.js';
 
 type ToolContent = string | ChartData;
 
+interface TypographyTemplate {
+  type: string;
+  content: string;
+  label: string;
+  defaultStyles: {
+    fontSize: number;
+    fontWeight: string;
+    fontFamily: string;
+  };
+}
+
+const typographyTemplates: TypographyTemplate[] = [
+  {
+    type: 'text',
+    content: 'Main Title',
+    label: 'Title (H1)',
+    defaultStyles: {
+      fontSize: 32,
+      fontWeight: 'bold',
+      fontFamily: 'Arial'
+    }
+  },
+  {
+    type: 'text',
+    content: 'Subtitle',
+    label: 'Subtitle (H2)',
+    defaultStyles: {
+      fontSize: 24,
+      fontWeight: '600',
+      fontFamily: 'Arial'
+    }
+  },
+  {
+    type: 'text',
+    content: 'Section Heading',
+    label: 'Heading (H3)',
+    defaultStyles: {
+      fontSize: 20,
+      fontWeight: '500',
+      fontFamily: 'Arial'
+    }
+  },
+  {
+    type: 'text',
+    content: 'Body Text',
+    label: 'Body',
+    defaultStyles: {
+      fontSize: 16,
+      fontWeight: 'normal',
+      fontFamily: 'Arial'
+    }
+  },
+  {
+    type: 'text',
+    content: 'Caption Text',
+    label: 'Caption',
+    defaultStyles: {
+      fontSize: 12,
+      fontWeight: 'normal',
+      fontFamily: 'Arial'
+    }
+  }
+];
+
 interface DraggableToolProps {
   type: string;
   content: ToolContent;
   label: string;
+  defaultStyles?: {
+    fontSize?: number;
+    fontWeight?: string;
+    fontFamily?: string;
+    fontStyle?: string;
+  };
 }
 
-const DraggableTool: React.FC<DraggableToolProps> = ({ type, content, label }) => {
+const DraggableTool: React.FC<DraggableToolProps> = ({ type, content, label, defaultStyles }) => {
   const [{ isDragging }, drag] = useDrag(() => ({
     type: 'tool',
-    item: { type, content },
+    item: { 
+      type, 
+      content,
+      fontSize: defaultStyles?.fontSize,
+      fontFamily: defaultStyles?.fontFamily,
+      fontWeight: defaultStyles?.fontWeight,
+      fontStyle: defaultStyles?.fontStyle,
+      textAlign: 'left'  // Default text alignment
+    },
     collect: (monitor) => ({
       isDragging: !!monitor.isDragging(),
     }),
@@ -32,7 +110,15 @@ const DraggableTool: React.FC<DraggableToolProps> = ({ type, content, label }) =
         userSelect: 'none'
       }}
     >
-      <Typography>{label}</Typography>
+      <Typography 
+        sx={{ 
+          fontSize: defaultStyles?.fontSize ? `${defaultStyles.fontSize}px` : 'inherit',
+          fontWeight: defaultStyles?.fontWeight || 'inherit',
+          fontFamily: defaultStyles?.fontFamily || 'inherit',
+        }}
+      >
+        {label}
+      </Typography>
     </Paper>
   );
 };
@@ -67,11 +153,31 @@ const Toolbar: React.FC = () => {
       <Typography variant="h6" sx={{ mb: 1 }}>
         Widgets
       </Typography>
+
+      <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>Typography</Typography>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-        <DraggableTool type="text" content="New Text" label="Text Block" />
-        <DraggableTool type="title" content="New Title" label="Title" />
+        {typographyTemplates.map((template, index) => (
+          <DraggableTool
+            key={index}
+            type={template.type}
+            content={template.content}
+            label={template.label}
+            defaultStyles={template.defaultStyles}
+          />
+        ))}
+      </Box>
+
+      <Divider sx={{ my: 2 }} />
+
+      <Typography variant="subtitle2" sx={{ mb: 1 }}>Media</Typography>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
         <DraggableTool type="image" content="image-url" label="Image" />
-        <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>Charts</Typography>
+      </Box>
+
+      <Divider sx={{ my: 2 }} />
+
+      <Typography variant="subtitle2" sx={{ mb: 1 }}>Charts</Typography>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
         <DraggableTool type="chart" content={chartTemplates.bar} label="Bar Chart" />
         <DraggableTool type="chart" content={chartTemplates.line} label="Line Chart" />
         <DraggableTool type="chart" content={chartTemplates.pie} label="Pie Chart" />

@@ -1,7 +1,12 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useDrag } from 'react-dnd';
-import { Box, Typography, IconButton, Menu, FormControl, InputLabel, Select, MenuItem } from '@mui/material';
+import { Box, Typography, IconButton, FormControl, InputLabel, Select, MenuItem, TextField, Slider, Popover, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import { getEmptyImage } from 'react-dnd-html5-backend';
+import FormatAlignLeftIcon from '@mui/icons-material/FormatAlignLeft';
+import FormatAlignCenterIcon from '@mui/icons-material/FormatAlignCenter';
+import FormatAlignRightIcon from '@mui/icons-material/FormatAlignRight';
+import FormatItalicIcon from '@mui/icons-material/FormatItalic';
+import TextFieldsIcon from '@mui/icons-material/TextFields';
 
 // Grid size in pixels (must match PDFEditor)
 const GRID_SIZE = 10;
@@ -24,11 +29,46 @@ interface DraggableElementProps {
   borderStyle: string;
   borderColor: string;
   borderWidth: number;
+  fontSize?: number;
+  fontFamily?: string;
+  fontWeight?: string;
+  fontStyle?: string;
+  textAlign?: 'left' | 'center' | 'right';
   onResize: (id: string, width: number, height: number) => void;
   onStyleChange: (id: string, updates: Partial<DraggableElementProps>) => void;
   onPositionChange: (id: string, x: number, y: number) => void;
+  onContentChange: (id: string, content: string) => void;
   onDelete?: (id: string) => void;
 }
+
+const FONT_FAMILIES = [
+  'Arial',
+  'Helvetica',
+  'Times New Roman',
+  'Courier New',
+  'Georgia',
+  'Verdana',
+  'Tahoma',
+  'Trebuchet MS',
+  'Impact',
+  'Comic Sans MS'
+];
+
+const FONT_WEIGHTS = [
+  'normal',
+  'bold',
+  'bolder',
+  'lighter',
+  '100',
+  '200',
+  '300',
+  '400',
+  '500',
+  '600',
+  '700',
+  '800',
+  '900'
+];
 
 const DraggableElement: React.FC<DraggableElementProps> = ({
   id,
@@ -42,16 +82,24 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
   borderStyle,
   borderColor,
   borderWidth,
+  fontSize = 12,
+  fontFamily = 'Arial',
+  fontWeight = 'normal',
+  fontStyle = 'normal',
+  textAlign = 'left',
   onResize,
   onStyleChange,
   onPositionChange,
+  onContentChange,
   onDelete
 }) => {
   const [isResizing, setIsResizing] = useState(false);
   const [resizeDirection, setResizeDirection] = useState<string | null>(null);
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [popoverPosition, setPopoverPosition] = useState<{ top: number; left: number } | null>(null);
   const [currentPosition, setCurrentPosition] = useState({ x, y });
   const [isSelected, setIsSelected] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState(content);
   const lastKnownPosition = useRef({ x, y });
 
   const elementRef = useRef<HTMLDivElement>(null);
@@ -229,11 +277,19 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
 
   const handleStyleClick = (event: React.MouseEvent<HTMLElement>) => {
     event.stopPropagation();
-    setAnchorEl(event.currentTarget);
+    const buttonRect = event.currentTarget.getBoundingClientRect();
+    setPopoverPosition({
+      top: buttonRect.bottom + window.scrollY,
+      left: buttonRect.right + window.scrollX - 250 // 250 is the popover width
+    });
   };
 
   const handleClose = () => {
-    setAnchorEl(null);
+    setPopoverPosition(null);
+  };
+
+  const handleStyleChange = (updates: Partial<DraggableElementProps>) => {
+    onStyleChange(id, updates);
   };
 
   const handleElementClick = (e: React.MouseEvent) => {
@@ -259,27 +315,27 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
     let newWidth = width;
     let newHeight = height;
 
+    // Calculate new dimensions based on cursor position relative to the element
     switch (direction) {
       case 'right':
-        newWidth = snapToGrid(event.clientX - rect.left);
+        newWidth = Math.max(50, event.clientX - rect.left);
         break;
       case 'bottom':
-        newHeight = snapToGrid(event.clientY - rect.top);
+        newHeight = Math.max(30, event.clientY - rect.top);
         break;
       case 'bottomRight':
-        newWidth = snapToGrid(event.clientX - rect.left);
-        newHeight = snapToGrid(event.clientY - rect.top);
+        newWidth = Math.max(50, event.clientX - rect.left);
+        newHeight = Math.max(30, event.clientY - rect.top);
         break;
     }
 
-    // Apply minimum size and enforce paper boundaries
-    const minSize = 20; // Minimum element size
+    // Ensure element does not extend beyond paper boundaries
     const maxWidth = parentRect.width - currentPosition.x;
     const maxHeight = parentRect.height - currentPosition.y;
 
-    // Ensure element does not extend beyond paper boundaries and maintains minimum size
-    newWidth = Math.max(minSize, Math.min(newWidth, maxWidth));
-    newHeight = Math.max(minSize, Math.min(newHeight, maxHeight));
+    // Apply boundaries
+    newWidth = Math.min(newWidth, maxWidth);
+    newHeight = Math.min(newHeight, maxHeight);
 
     // Only update if size has changed
     if (newWidth !== width || newHeight !== height) {
@@ -312,12 +368,78 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isResizing, resizeDirection]);
 
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    if (type === 'text' || type === 'title') {
+      e.stopPropagation();
+      setIsEditing(true);
+    }
+  };
+
+  const handleContentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setEditContent(e.target.value);
+  };
+
+  const handleContentBlur = () => {
+    setIsEditing(false);
+    if (editContent !== content) {
+      onContentChange(id, editContent);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleContentBlur();
+    }
+  };
+
+  const selectMenuProps = {
+    PaperProps: {
+      sx: {
+        maxHeight: 300,
+        '& .MuiList-root': {
+          padding: 0,
+          '&::-webkit-scrollbar': {
+            display: 'none'
+          },
+          scrollbarWidth: 'none',  // Firefox
+          msOverflowStyle: 'none',  // IE/Edge
+          overflowY: 'scroll'
+        }
+      }
+    },
+    anchorOrigin: {
+      vertical: 'bottom' as const,
+      horizontal: 'left' as const,
+    },
+    transformOrigin: {
+      vertical: 'top' as const,
+      horizontal: 'left' as const,
+    },
+    slotProps: {
+      paper: {
+        elevation: 3
+      }
+    }
+  };
+
+  const handleAlignChange = (_: React.MouseEvent<HTMLElement>, newAlignment: 'left' | 'center' | 'right' | null) => {
+    if (newAlignment !== null) {
+      handleStyleChange({ textAlign: newAlignment });
+    }
+  };
+
+  const handleFontStyleChange = (_: React.MouseEvent<HTMLElement>, newStyle: string | null) => {
+    handleStyleChange({ fontStyle: newStyle === 'italic' ? 'italic' : 'normal' });
+  };
+
   drag(elementRef);
 
   return (
     <Box
       ref={elementRef}
       onClick={handleElementClick}
+      onDoubleClick={handleDoubleClick}
       sx={{
         position: 'absolute',
         left: currentPosition.x,
@@ -326,18 +448,20 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
         height,
         opacity: isDragging ? 0.5 : 1,
         cursor: 'move',
-        border: `${borderWidth}px ${borderStyle} ${borderColor}`,
-        backgroundColor,
+        border: isSelected ? `${borderWidth}px ${borderStyle} ${borderColor}` : 'none',
+        backgroundColor: backgroundColor || 'transparent',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 0,
+        padding: '8px',
         margin: 0,
         boxSizing: 'border-box',
         transition: isDragging ? 'none' : 'all 0.1s ease',
         zIndex: isSelected ? 1000 : 1,
         outline: isSelected ? '2px solid #2196F3' : 'none',
+        minWidth: type === 'text' || type === 'title' ? '50px' : undefined,
+        minHeight: type === 'text' || type === 'title' ? '30px' : undefined,
       }}
     >
       <Typography 
@@ -359,12 +483,118 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
       <Box sx={{ 
         width: '100%', 
         height: '100%', 
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
         padding: 0,
         margin: 0,
         boxSizing: 'border-box',
       }}>
-        {type === 'text' && <Typography>{content}</Typography>}
-        {type === 'title' && <Typography variant="h6">{content}</Typography>}
+        {type === 'text' && (
+          isEditing ? (
+            <TextField
+              value={editContent}
+              onChange={handleContentChange}
+              onBlur={handleContentBlur}
+              onKeyDown={handleKeyDown}
+              multiline
+              fullWidth
+              autoFocus
+              variant="standard"
+              sx={{
+                '& .MuiInputBase-root': {
+                  fontSize: `${fontSize}px`,
+                  fontFamily,
+                  fontWeight,
+                  fontStyle,
+                  textAlign,
+                  padding: 0,
+                  '&:before, &:after': {
+                    display: 'none'
+                  }
+                },
+                '& .MuiInputBase-input': {
+                  padding: 0,
+                  lineHeight: 1.5
+                }
+              }}
+            />
+          ) : (
+            <Typography
+              sx={{
+                fontSize: `${fontSize}px`,
+                fontFamily,
+                fontWeight,
+                fontStyle,
+                textAlign,
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+                margin: 0,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word'
+              }}
+            >
+              {content}
+            </Typography>
+          )
+        )}
+        {type === 'title' && (
+          isEditing ? (
+            <TextField
+              value={editContent}
+              onChange={handleContentChange}
+              onBlur={handleContentBlur}
+              onKeyDown={handleKeyDown}
+              multiline
+              fullWidth
+              autoFocus
+              variant="standard"
+              sx={{
+                '& .MuiInputBase-root': {
+                  fontSize: `${fontSize}px`,
+                  fontFamily,
+                  fontWeight,
+                  fontStyle,
+                  textAlign,
+                  padding: 0,
+                  '&:before, &:after': {
+                    display: 'none'
+                  }
+                },
+                '& .MuiInputBase-input': {
+                  padding: 0,
+                  lineHeight: 1.5
+                }
+              }}
+            />
+          ) : (
+            <Typography
+              variant="h6"
+              sx={{
+                fontSize: `${fontSize}px`,
+                fontFamily,
+                fontWeight,
+                fontStyle,
+                textAlign,
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+                margin: 0,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word'
+              }}
+            >
+              {content}
+            </Typography>
+          )
+        )}
         {type === 'image' && <img src={content} alt="Draggable" style={{ maxWidth: '100%', maxHeight: '100%' }} />}
       </Box>
 
@@ -378,6 +608,7 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
               position: 'absolute',
               right: -25,
               top: -25,
+              backgroundColor: 'white',
               '&:hover': {
                 backgroundColor: 'rgba(255,255,255,0.9)',
               },
@@ -440,62 +671,122 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
         </>
       )}
 
-      <Menu
-        anchorEl={anchorEl}
-        open={Boolean(anchorEl)}
+      <Popover
+        open={Boolean(popoverPosition)}
+        anchorReference="anchorPosition"
+        anchorPosition={popoverPosition ? {
+          top: popoverPosition.top,
+          left: popoverPosition.left
+        } : undefined}
         onClose={handleClose}
-        anchorOrigin={{
-          vertical: 'bottom',
-          horizontal: 'right',
-        }}
         transformOrigin={{
           vertical: 'top',
           horizontal: 'right',
         }}
-        sx={{
-          '& .MuiPaper-root': {
-            maxWidth: 'none',
-            p: 2,
-            minWidth: 250,
+        slotProps={{
+          paper: {
+            sx: {
+              p: 2,
+              minWidth: 250,
+              maxWidth: 'none',
+              overflow: 'visible'
+            }
           }
         }}
-        disablePortal
-        keepMounted
+        container={document.body} // Render directly in body to avoid positioning issues
       >
         <Box sx={{ p: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <FormControl size="small" sx={{ flex: 1 }}>
-              <InputLabel>Width</InputLabel>
-              <Select
-                value={width}
-                onChange={(e) => onResize(id, Number(e.target.value), height)}
-                label="Width"
-              >
-                {[100, 150, 200, 250, 300, 350, 400].map(w => (
-                  <MenuItem key={w} value={w}>{w}px</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <FormControl size="small" sx={{ flex: 1 }}>
-              <InputLabel>Height</InputLabel>
-              <Select
-                value={height}
-                onChange={(e) => onResize(id, width, Number(e.target.value))}
-                label="Height"
-              >
-                {[50, 75, 100, 150, 200, 250, 300].map(h => (
-                  <MenuItem key={h} value={h}>{h}px</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
+          {(type === 'text' || type === 'title') && (
+            <>
+              <FormControl size="small">
+                <InputLabel>Font Family</InputLabel>
+                <Select
+                  value={fontFamily}
+                  onChange={(e) => handleStyleChange({ fontFamily: e.target.value })}
+                  label="Font Family"
+                  MenuProps={selectMenuProps}
+                >
+                  {FONT_FAMILIES.map(font => (
+                    <MenuItem key={font} value={font}>{font}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <FormControl size="small">
+                <InputLabel>Font Weight</InputLabel>
+                <Select
+                  value={fontWeight}
+                  onChange={(e) => handleStyleChange({ fontWeight: e.target.value })}
+                  label="Font Weight"
+                  MenuProps={selectMenuProps}
+                >
+                  {FONT_WEIGHTS.map(weight => (
+                    <MenuItem key={weight} value={weight}>{weight}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                <Typography variant="caption" sx={{ minWidth: 70 }}>Text Style</Typography>
+                <ToggleButtonGroup
+                  value={fontStyle === 'italic' ? 'italic' : 'normal'}
+                  exclusive
+                  onChange={handleFontStyleChange}
+                  aria-label="text style"
+                  size="small"
+                >
+                  <ToggleButton value="normal" aria-label="normal text">
+                    <TextFieldsIcon />
+                  </ToggleButton>
+                  <ToggleButton value="italic" aria-label="italic text">
+                    <FormatItalicIcon />
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              </Box>
+
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                <Typography variant="caption" sx={{ minWidth: 70 }}>Alignment</Typography>
+                <ToggleButtonGroup
+                  value={textAlign}
+                  exclusive
+                  onChange={handleAlignChange}
+                  aria-label="text alignment"
+                  size="small"
+                >
+                  <ToggleButton value="left" aria-label="left aligned">
+                    <FormatAlignLeftIcon />
+                  </ToggleButton>
+                  <ToggleButton value="center" aria-label="center aligned">
+                    <FormatAlignCenterIcon />
+                  </ToggleButton>
+                  <ToggleButton value="right" aria-label="right aligned">
+                    <FormatAlignRightIcon />
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              </Box>
+
+              <Box>
+                <Typography variant="caption">Font Size</Typography>
+                <Slider
+                  value={fontSize}
+                  onChange={(_, value) => handleStyleChange({ fontSize: value as number })}
+                  min={8}
+                  max={72}
+                  step={1}
+                  marks
+                  valueLabelDisplay="auto"
+                />
+              </Box>
+            </>
+          )}
 
           <FormControl size="small">
             <InputLabel>Border Style</InputLabel>
             <Select
               value={borderStyle}
-              onChange={(e) => onStyleChange(id, { borderStyle: e.target.value })}
+              onChange={(e) => handleStyleChange({ borderStyle: e.target.value })}
               label="Border Style"
+              MenuProps={selectMenuProps}
             >
               {BORDER_STYLES.map(style => (
                 <MenuItem key={style} value={style}>{style}</MenuItem>
@@ -507,8 +798,9 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
             <InputLabel>Border Width</InputLabel>
             <Select
               value={borderWidth}
-              onChange={(e) => onStyleChange(id, { borderWidth: Number(e.target.value) })}
+              onChange={(e) => handleStyleChange({ borderWidth: Number(e.target.value) })}
               label="Border Width"
+              MenuProps={selectMenuProps}
             >
               {[1, 2, 3, 4, 5].map(width => (
                 <MenuItem key={width} value={width}>{width}px</MenuItem>
@@ -516,23 +808,23 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
             </Select>
           </FormControl>
 
-          <Box>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             <Typography variant="caption">Border Color</Typography>
             <input
               type="color"
               value={borderColor}
-              onChange={(e) => onStyleChange(id, { borderColor: e.target.value })}
-              style={{ width: '100%' }}
+              onChange={(e) => handleStyleChange({ borderColor: e.target.value })}
+              style={{ width: '30%' }}
             />
           </Box>
 
-          <Box>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1}}>
             <Typography variant="caption">Background Color</Typography>
             <input
               type="color"
               value={backgroundColor}
-              onChange={(e) => onStyleChange(id, { backgroundColor: e.target.value })}
-              style={{ width: '100%' }}
+              onChange={(e) => handleStyleChange({ backgroundColor: e.target.value })}
+              style={{ width: '30%' }}
             />
           </Box>
           
@@ -540,7 +832,7 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
             Tip: Use arrow keys for pixel-perfect positioning or press Delete to remove
           </Typography>
         </Box>
-      </Menu>
+      </Popover>
     </Box>
   );
 };
