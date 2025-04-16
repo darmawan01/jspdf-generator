@@ -15,11 +15,6 @@ const PAPER_SIZES = {
   Letter: { width: 612, height: 792 },
 } as const;
 
-// PDF dimensions in points (1/72 inch)
-const PDF_WIDTH = 595;  // A4 width in points
-const PDF_HEIGHT = 842; // A4 height in points
-const Y_OFFSET = 7;    // Offset for Y coordinate adjustment
-
 interface GridCell {
   x: number;
   y: number;
@@ -73,6 +68,7 @@ const PDFEditor: React.FC = () => {
     updateElementStyle,
     setPaperSize,
     setOrientation,
+    deleteElement,
   } = usePDFContext();
 
   const paperRef = useRef<HTMLDivElement>(null);
@@ -106,26 +102,6 @@ const PDFEditor: React.FC = () => {
     return cells;
   }, [paperDimensions]);
 
-  // Find nearest grid cell
-  const findNearestCell = (clientX: number, clientY: number): GridCell | null => {
-    if (!paperRef.current) return null;
-
-    const paperRect = paperRef.current.getBoundingClientRect();
-    
-    // Get relative position within the paper
-    const relativeX = clientX - paperRect.left;
-    const relativeY = clientY - paperRect.top;
-
-    // Convert to cell coordinates
-    const cellX = Math.floor((relativeX / paperRect.width) * CELLS_X);
-    const cellY = Math.floor((relativeY / paperRect.height) * CELLS_Y);
-
-    // Ensure within bounds
-    if (cellX >= 0 && cellX < CELLS_X && cellY >= 0 && cellY < CELLS_Y) {
-      return grid[cellY][cellX];
-    }
-    return null;
-  };
 
   // Draw grid on canvas
   useEffect(() => {
@@ -299,6 +275,7 @@ const PDFEditor: React.FC = () => {
                 onResize={resizeElement}
                 onStyleChange={updateElementStyle}
                 onPositionChange={moveElement}
+                onDelete={deleteElement}
               />
             ))}
           </Paper>

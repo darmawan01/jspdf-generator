@@ -23,6 +23,7 @@ interface PDFContextType {
   moveElement: (id: string, x: number, y: number) => void;
   resizeElement: (id: string, width: number, height: number) => void;
   updateElementStyle: (id: string, updates: Partial<DraggableItem>) => void;
+  deleteElement: (id: string) => void;
   setPaperSize: (size: string) => void;
   setOrientation: (orientation: 'portrait' | 'landscape') => void;
 }
@@ -80,6 +81,11 @@ export const PDFProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setElements(prev =>
       prev.map(el => (el.id === id ? { ...el, ...updates } : el))
     );
+  };
+
+  const deleteElement = (id: string) => {
+    setElements(prev => prev.filter(el => el.id !== id));
+    console.log(`Element with ID ${id} has been deleted`);
   };
 
   useEffect(() => {
@@ -142,6 +148,7 @@ export const PDFProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     moveElement,
     resizeElement,
     updateElementStyle,
+    deleteElement,
     setPaperSize,
     setOrientation,
   };

@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useDrag } from 'react-dnd';
-import { Box, Typography, IconButton, Popover, FormControl, InputLabel, Select, MenuItem } from '@mui/material';
+import { Box, Typography, IconButton, Menu, FormControl, InputLabel, Select, MenuItem } from '@mui/material';
+import { getEmptyImage } from 'react-dnd-html5-backend';
 
 // Grid size in pixels (must match PDFEditor)
 const GRID_SIZE = 10;
@@ -26,6 +27,7 @@ interface DraggableElementProps {
   onResize: (id: string, width: number, height: number) => void;
   onStyleChange: (id: string, updates: Partial<DraggableElementProps>) => void;
   onPositionChange: (id: string, x: number, y: number) => void;
+  onDelete?: (id: string) => void;
 }
 
 const DraggableElement: React.FC<DraggableElementProps> = ({
@@ -42,23 +44,26 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
   borderWidth,
   onResize,
   onStyleChange,
-  onPositionChange
+  onPositionChange,
+  onDelete
 }) => {
   const [isResizing, setIsResizing] = useState(false);
   const [resizeDirection, setResizeDirection] = useState<string | null>(null);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [currentPosition, setCurrentPosition] = useState({ x, y });
+  const [isSelected, setIsSelected] = useState(false);
   const lastKnownPosition = useRef({ x, y });
 
   const elementRef = useRef<HTMLDivElement>(null);
+  const gearButtonRef = useRef<HTMLButtonElement>(null);
 
-  const [{ isDragging }, drag] = useDrag({
+  const [{ isDragging }, drag, preview] = useDrag({
     type: 'element',
-    item: { id, type, x, y, width, height },
+    item: { id, type, content, x: currentPosition.x, y: currentPosition.y, width, height },
     collect: (monitor) => ({
       isDragging: !!monitor.isDragging(),
     }),
-    end: (item, monitor) => {
+    end: (_, monitor) => {
       if (!monitor.didDrop()) {
         setCurrentPosition({ x, y }); // Reset if not dropped
         return;
@@ -75,6 +80,11 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
       console.log('END DRAG - Position after update:', lastKnownPosition.current);
     }
   });
+
+  // Use empty image for HTML5 drag preview (we'll render our own preview)
+  useEffect(() => {
+    preview(getEmptyImage(), { captureDraggingState: true });
+  }, [preview]);
 
   // Update current position when props change
   useEffect(() => {
@@ -153,6 +163,70 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
     }
   }, [x, y, width, height, id, isDragging, onPositionChange]);
 
+  // Handle arrow key navigation for pixel-by-pixel movement
+  useEffect(() => {
+    if (!isSelected) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!elementRef.current?.parentElement) return;
+      
+      const paperRect = elementRef.current.parentElement.getBoundingClientRect();
+      const maxX = paperRect.width - width;
+      const maxY = paperRect.height - height;
+      
+      let newX = currentPosition.x;
+      let newY = currentPosition.y;
+      
+      // Move 1px at a time with arrow keys
+      switch (e.key) {
+        case 'ArrowLeft':
+          newX = Math.max(0, currentPosition.x - 1);
+          e.preventDefault();
+          break;
+        case 'ArrowRight':
+          newX = Math.min(maxX, currentPosition.x + 1);
+          e.preventDefault();
+          break;
+        case 'ArrowUp':
+          newY = Math.max(0, currentPosition.y - 1);
+          e.preventDefault();
+          break;
+        case 'ArrowDown':
+          newY = Math.min(maxY, currentPosition.y + 1);
+          e.preventDefault();
+          break;
+        case 'Delete':
+          if (onDelete) {
+            onDelete(id);
+            e.preventDefault();
+          }
+          break;
+      }
+      
+      if (newX !== currentPosition.x || newY !== currentPosition.y) {
+        const newPosition = { x: newX, y: newY };
+        lastKnownPosition.current = newPosition;
+        setCurrentPosition(newPosition);
+        onPositionChange(id, newX, newY);
+      }
+    };
+    
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isSelected, currentPosition, width, height, id, onPositionChange, onDelete]);
+  
+  // Handle click outside to deselect the element
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (elementRef.current && !elementRef.current.contains(e.target as Node)) {
+        setIsSelected(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const handleStyleClick = (event: React.MouseEvent<HTMLElement>) => {
     event.stopPropagation();
     setAnchorEl(event.currentTarget);
@@ -160,6 +234,11 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
 
   const handleClose = () => {
     setAnchorEl(null);
+  };
+
+  const handleElementClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsSelected(true);
   };
 
   const handleResizeStart = (direction: string) => (e: React.MouseEvent) => {
@@ -229,6 +308,8 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
+ 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isResizing, resizeDirection]);
 
   drag(elementRef);
@@ -236,6 +317,7 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
   return (
     <Box
       ref={elementRef}
+      onClick={handleElementClick}
       sx={{
         position: 'absolute',
         left: currentPosition.x,
@@ -254,7 +336,8 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
         margin: 0,
         boxSizing: 'border-box',
         transition: isDragging ? 'none' : 'all 0.1s ease',
-        zIndex: isDragging ? 1000 : 1,
+        zIndex: isSelected ? 1000 : 1,
+        outline: isSelected ? '2px solid #2196F3' : 'none',
       }}
     >
       <Typography 
@@ -285,83 +368,101 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
         {type === 'image' && <img src={content} alt="Draggable" style={{ maxWidth: '100%', maxHeight: '100%' }} />}
       </Box>
 
-      <IconButton
-        size="small"
-        onClick={handleStyleClick}
-        sx={{
-          position: 'absolute',
-          right: -25,
-          top: -25,
-          '&:hover': {
-            backgroundColor: 'rgba(255,255,255,0.9)',
-          },
-        }}
-      >
-        ⚙️
-      </IconButton>
+      {isSelected && (
+        <>
+          <IconButton
+            ref={gearButtonRef}
+            size="small"
+            onClick={handleStyleClick}
+            sx={{
+              position: 'absolute',
+              right: -25,
+              top: -25,
+              '&:hover': {
+                backgroundColor: 'rgba(255,255,255,0.9)',
+              },
+            }}
+          >
+            ⚙️
+          </IconButton>
 
-      {/* Resize handles */}
-      <div
-        className="resize-handle"
-        style={{
-          position: 'absolute',
-          right: -6,
-          top: '50%',
-          width: 12,
-          height: 12,
-          backgroundColor: '#1976d2',
-          cursor: 'e-resize',
-          borderRadius: '50%',
-          transform: 'translateY(-50%)',
-          zIndex: 1001,
-        }}
-        onMouseDown={handleResizeStart('right')}
-        onClick={(e) => e.stopPropagation()}
-      />
-      <div
-        className="resize-handle"
-        style={{
-          position: 'absolute',
-          bottom: -6,
-          left: '50%',
-          width: 12,
-          height: 12,
-          backgroundColor: '#1976d2',
-          cursor: 's-resize',
-          borderRadius: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 1001,
-        }}
-        onMouseDown={handleResizeStart('bottom')}
-        onClick={(e) => e.stopPropagation()}
-      />
-      <div
-        className="resize-handle"
-        style={{
-          position: 'absolute',
-          right: -6,
-          bottom: -6,
-          width: 12,
-          height: 12,
-          backgroundColor: '#1976d2',
-          cursor: 'se-resize',
-          borderRadius: '50%',
-          zIndex: 1001,
-        }}
-        onMouseDown={handleResizeStart('bottomRight')}
-        onClick={(e) => e.stopPropagation()}
-      />
+          {/* Resize handles */}
+          <div
+            className="resize-handle"
+            style={{
+              position: 'absolute',
+              right: -6,
+              top: '50%',
+              width: 12,
+              height: 12,
+              backgroundColor: '#1976d2',
+              cursor: 'e-resize',
+              borderRadius: '50%',
+              transform: 'translateY(-50%)',
+              zIndex: 1001,
+            }}
+            onMouseDown={handleResizeStart('right')}
+            onClick={(e) => e.stopPropagation()}
+          />
+          <div
+            className="resize-handle"
+            style={{
+              position: 'absolute',
+              bottom: -6,
+              left: '50%',
+              width: 12,
+              height: 12,
+              backgroundColor: '#1976d2',
+              cursor: 's-resize',
+              borderRadius: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 1001,
+            }}
+            onMouseDown={handleResizeStart('bottom')}
+            onClick={(e) => e.stopPropagation()}
+          />
+          <div
+            className="resize-handle"
+            style={{
+              position: 'absolute',
+              right: -6,
+              bottom: -6,
+              width: 12,
+              height: 12,
+              backgroundColor: '#1976d2',
+              cursor: 'se-resize',
+              borderRadius: '50%',
+              zIndex: 1001,
+            }}
+            onMouseDown={handleResizeStart('bottomRight')}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </>
+      )}
 
-      <Popover
-        open={Boolean(anchorEl)}
+      <Menu
         anchorEl={anchorEl}
+        open={Boolean(anchorEl)}
         onClose={handleClose}
         anchorOrigin={{
           vertical: 'bottom',
           horizontal: 'right',
         }}
+        transformOrigin={{
+          vertical: 'top',
+          horizontal: 'right',
+        }}
+        sx={{
+          '& .MuiPaper-root': {
+            maxWidth: 'none',
+            p: 2,
+            minWidth: 250,
+          }
+        }}
+        disablePortal
+        keepMounted
       >
-        <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <Box sx={{ p: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <FormControl size="small" sx={{ flex: 1 }}>
               <InputLabel>Width</InputLabel>
@@ -434,8 +535,12 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
               style={{ width: '100%' }}
             />
           </Box>
+          
+          <Typography variant="caption" sx={{ mt: 1, color: 'text.secondary' }}>
+            Tip: Use arrow keys for pixel-perfect positioning or press Delete to remove
+          </Typography>
         </Box>
-      </Popover>
+      </Menu>
     </Box>
   );
 };
