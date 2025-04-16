@@ -48,12 +48,13 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
   const [resizeDirection, setResizeDirection] = useState<string | null>(null);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [currentPosition, setCurrentPosition] = useState({ x, y });
+  const lastKnownPosition = useRef({ x, y });
 
   const elementRef = useRef<HTMLDivElement>(null);
 
   const [{ isDragging }, drag] = useDrag({
     type: 'element',
-    item: { id, type, x, y },
+    item: { id, type, x, y, width, height },
     collect: (monitor) => ({
       isDragging: !!monitor.isDragging(),
     }),
@@ -63,17 +64,22 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
         return;
       }
       
-      const dropResult = monitor.getDropResult() as { x: number; y: number };
-      if (dropResult) {
-        setCurrentPosition({ x: dropResult.x, y: dropResult.y });
-        onPositionChange(id, dropResult.x, dropResult.y);
-      }
+      // Use the last known hover position, which will be consistent with what the user sees
+      // during dragging, rather than the drop result which may have different coordinates
+      console.log('END DRAG - Last known hover position:', lastKnownPosition.current);
+      console.log('END DRAG - Current position before update:', { x, y });
+      
+      setCurrentPosition(lastKnownPosition.current);
+      onPositionChange(id, lastKnownPosition.current.x, lastKnownPosition.current.y);
+      
+      console.log('END DRAG - Position after update:', lastKnownPosition.current);
     }
   });
 
   // Update current position when props change
   useEffect(() => {
     setCurrentPosition({ x, y });
+    lastKnownPosition.current = { x, y };
   }, [x, y]);
 
   // Live position update during drag
@@ -85,26 +91,67 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
       if (!paperElement) return;
 
       const paperRect = paperElement.getBoundingClientRect();
-      const newX = Math.max(0, e.clientX - paperRect.left);
-      const newY = Math.max(0, e.clientY - paperRect.top);
+      
+      // Get element position relative to paper
+      const relativeX = e.clientX - paperRect.left;
+      const relativeY = e.clientY - paperRect.top;
+      
+      // Log occasionally for debugging
+      if (Math.random() < 0.01) {
+        console.log('DRAG - Mouse position:', { clientX: e.clientX, clientY: e.clientY });
+        console.log('DRAG - Paper rect:', paperRect);
+        console.log('DRAG - Relative position:', { relativeX, relativeY });
+      }
 
       // Snap to grid
-      const snappedX = snapToGrid(newX);
-      const snappedY = snapToGrid(newY);
+      const snappedX = snapToGrid(relativeX);
+      const snappedY = snapToGrid(relativeY);
 
-      // Ensure within bounds
-      const boundedX = Math.min(snappedX, paperRect.width - width);
-      const boundedY = Math.min(snappedY, paperRect.height - height);
+      // Ensure element stays completely within paper boundaries
+      const maxX = paperRect.width - width;
+      const maxY = paperRect.height - height;
+      
+      const boundedX = Math.max(0, Math.min(snappedX, maxX));
+      const boundedY = Math.max(0, Math.min(snappedY, maxY));
 
-      setCurrentPosition({ 
-        x: Math.max(0, boundedX), 
-        y: Math.max(0, boundedY) 
-      });
+      if (Math.random() < 0.01) {
+        console.log('DRAG - Final position:', { boundedX, boundedY });
+      }
+
+      // Store this position so we can use it when the drag ends
+      const newPosition = { x: boundedX, y: boundedY };
+      lastKnownPosition.current = newPosition;
+      setCurrentPosition(newPosition);
+      
+      // Update position in parent component to ensure code generation is accurate
+      onPositionChange(id, boundedX, boundedY);
     };
 
     document.addEventListener('mousemove', updatePosition);
     return () => document.removeEventListener('mousemove', updatePosition);
-  }, [isDragging, width, height]);
+  }, [isDragging, width, height, id, onPositionChange]);
+
+  // Update after drag ends
+  useEffect(() => {
+    if (isDragging) return; // Skip while dragging
+    
+    // Ensure position is within bounds
+    if (elementRef.current?.parentElement) {
+      const paperRect = elementRef.current.parentElement.getBoundingClientRect();
+      
+      // Ensure element stays completely within paper boundaries
+      const maxX = paperRect.width - width;
+      const maxY = paperRect.height - height;
+      
+      const boundedX = Math.max(0, Math.min(x, maxX));
+      const boundedY = Math.max(0, Math.min(y, maxY));
+      
+      if (boundedX !== x || boundedY !== y) {
+        setCurrentPosition({ x: boundedX, y: boundedY });
+        onPositionChange(id, boundedX, boundedY);
+      }
+    }
+  }, [x, y, width, height, id, isDragging, onPositionChange]);
 
   const handleStyleClick = (event: React.MouseEvent<HTMLElement>) => {
     event.stopPropagation();
@@ -146,11 +193,19 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
         break;
     }
 
-    // Ensure element stays within paper boundaries
-    newWidth = Math.max(50, Math.min(newWidth, parentRect.width - x));
-    newHeight = Math.max(50, Math.min(newHeight, parentRect.height - y));
+    // Apply minimum size and enforce paper boundaries
+    const minSize = 20; // Minimum element size
+    const maxWidth = parentRect.width - currentPosition.x;
+    const maxHeight = parentRect.height - currentPosition.y;
 
-    onResize(id, newWidth, newHeight);
+    // Ensure element does not extend beyond paper boundaries and maintains minimum size
+    newWidth = Math.max(minSize, Math.min(newWidth, maxWidth));
+    newHeight = Math.max(minSize, Math.min(newHeight, maxHeight));
+
+    // Only update if size has changed
+    if (newWidth !== width || newHeight !== height) {
+      onResize(id, newWidth, newHeight);
+    }
   };
 
   useEffect(() => {

@@ -27,42 +27,38 @@ interface GridCell {
   height: number;
 }
 
-interface DropResult {
-  x: number;
-  y: number;
-}
-
 export const ItemTypes = {
   ELEMENT: 'element',
   TOOL: 'tool',
 } as const;
 
-// Convert between PDF and viewer coordinates
-const convertToPDFCoordinates = (viewerX: number, viewerY: number, pageHeight: number): { x: number, y: number } => {
-  return {
-    x: viewerX,
-    y: pageHeight - viewerY // Flip Y coordinate
-  };
-};
+// Helper function to ensure consistent coordinate calculation
+const calculatePDFCoordinates = (
+  clientX: number,
+  clientY: number,
+  paperRect: DOMRect,
+  paperDimensions: { width: number; height: number }
+): { x: number; y: number } => {
+  // Get position relative to paper element (in pixels)
+  const relativeX = clientX - paperRect.left;
+  const relativeY = clientY - paperRect.top;
 
-const convertToViewerCoordinates = (pdfX: number, pdfY: number, pageHeight: number): { x: number, y: number } => {
-  return {
-    x: pdfX,
-    y: pageHeight - pdfY // Flip Y coordinate back
-  };
-};
+  // Log screen coordinates for debugging
+  console.log('Screen coordinates:', { relativeX, relativeY });
+  console.log('Paper dimensions (pixels):', { width: paperRect.width, height: paperRect.height });
 
-// Get precise mouse position relative to page
-const getMousePositionInPage = (e: MouseEvent, paperElement: HTMLElement): { x: number, y: number } => {
-  const paperRect = paperElement.getBoundingClientRect();
-  const scrollElement = paperElement.parentElement;
-  const scrollLeft = scrollElement?.scrollLeft || 0;
-  const scrollTop = scrollElement?.scrollTop || 0;
+  // Convert screen pixel position to PDF points with rounding for consistency
+  const pdfX = Math.round((relativeX / paperRect.width) * paperDimensions.width);
+  const pdfY = Math.round((relativeY / paperRect.height) * paperDimensions.height);
+  
+  // Log PDF coordinates for debugging
+  console.log('PDF coordinates:', { pdfX, pdfY });
 
-  return {
-    x: e.pageX + scrollLeft - paperRect.left,
-    y: e.pageY + scrollTop - paperRect.top
-  };
+  // Ensure within bounds
+  const boundedX = Math.max(0, Math.min(pdfX, paperDimensions.width));
+  const boundedY = Math.max(0, Math.min(pdfY, paperDimensions.height));
+  
+  return { x: boundedX, y: boundedY };
 };
 
 const PDFEditor: React.FC = () => {
@@ -180,13 +176,19 @@ const PDFEditor: React.FC = () => {
       const clientOffset = monitor.getClientOffset();
       if (!clientOffset || !paperRef.current) return;
 
+      console.log('DROP - Client offset:', clientOffset);
       const paperRect = paperRef.current.getBoundingClientRect();
-      const x = clientOffset.x - paperRect.left;
-      const y = clientOffset.y - paperRect.top;
+      console.log('DROP - Paper rect:', paperRect);
+      
+      // Use the shared coordinate calculation function
+      const { x: boundedX, y: boundedY } = calculatePDFCoordinates(
+        clientOffset.x,
+        clientOffset.y,
+        paperRect,
+        paperDimensions
+      );
 
-      // Ensure within bounds
-      const boundedX = Math.max(0, Math.min(x, paperDimensions.width));
-      const boundedY = Math.max(0, Math.min(y, paperDimensions.height));
+      console.log('DROP - Final position:', { boundedX, boundedY });
 
       if (!item.id) {
         addElement(item.type, item.content, boundedX, boundedY);
@@ -200,22 +202,20 @@ const PDFEditor: React.FC = () => {
       const dragPreview = monitor.getSourceClientOffset();
       if (!dragPreview) return;
 
+      // Only log occasionally to avoid console spam
+      if (Math.random() < 0.05) {
+        console.log('HOVER - Source offset:', dragPreview);
+      }
+      
       const paperRect = paperRef.current.getBoundingClientRect();
-      const containerWidth = paperRect.width;
-      const containerHeight = paperRect.height;
-
-      // Get position relative to container
-      const htmlX = dragPreview.x - paperRect.left;
-      const htmlY = dragPreview.y - paperRect.top;
-
-      // Convert HTML coordinates to PDF coordinates
-      const pdfX = (htmlX * PDF_WIDTH) / containerWidth;
-      // Flip Y coordinate for PDF space (PDF has 0,0 at bottom-left)
-      const pdfY = PDF_HEIGHT - ((htmlY * PDF_HEIGHT) / containerHeight) - Y_OFFSET;
-
-      // Ensure within bounds
-      const boundedX = Math.max(0, Math.min(pdfX, PDF_WIDTH));
-      const boundedY = Math.max(0, Math.min(pdfY, PDF_HEIGHT));
+      
+      // Use the shared coordinate calculation function
+      const { x: boundedX, y: boundedY } = calculatePDFCoordinates(
+        dragPreview.x,
+        dragPreview.y,
+        paperRect,
+        paperDimensions
+      );
 
       moveElement(item.id, boundedX, boundedY);
     }
