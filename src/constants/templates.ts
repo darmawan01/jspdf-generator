@@ -17,8 +17,8 @@ export const elementTemplates: Record<string, ElementTemplate> = {
     fontSize: 32,
     fontWeight: 'bold',
     fontFamily: 'Arial',
-    minWidth: 200,
-    heightPerLine: 48
+    minWidth: 160,
+    heightPerLine: 30
   },
   'Subtitle (H2)': {
     type: 'text',
@@ -28,7 +28,7 @@ export const elementTemplates: Record<string, ElementTemplate> = {
     fontWeight: '600',
     fontFamily: 'Arial',
     minWidth: 150,
-    heightPerLine: 36
+    heightPerLine: 28
   },
   'Heading (H3)': {
     type: 'text',
@@ -38,7 +38,7 @@ export const elementTemplates: Record<string, ElementTemplate> = {
     fontWeight: '500',
     fontFamily: 'Arial',
     minWidth: 140,
-    heightPerLine: 30
+    heightPerLine: 28
   },
   'Body': {
     type: 'text',

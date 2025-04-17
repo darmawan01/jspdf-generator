@@ -131,7 +131,7 @@ const Toolbar: React.FC = () => {
           <DraggableTool
             key={index}
             type={template.type}
-            content={template.label}
+            content={template.content}
             label={template.label}
             defaultStyles={{
               fontSize: template.fontSize,

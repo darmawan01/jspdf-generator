@@ -1,6 +1,20 @@
-import { ChartData } from 'chart.js';
 import React, { useCallback, useState } from 'react';
-import { PDFContext, PDFElement, Position } from './types';
+import { PDFContext, PDFElement } from './types';
+
+// Font mapping to jsPDF supported fonts
+const mapFontToPDF = (font: string): string => {
+  const fontMap: Record<string, string> = {
+    'Arial': 'helvetica',
+    'Helvetica': 'helvetica',
+    'Times New Roman': 'times',
+    'Times': 'times',
+    'Courier New': 'courier',
+    'Courier': 'courier',
+    'Symbol': 'symbol',
+    'ZapfDingbats': 'zapfdingbats'
+  };
+  return fontMap[font] || 'helvetica';
+};
 
 const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => {
   const [elements, setElements] = useState<PDFElement[]>([]);
@@ -10,26 +24,35 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
 
   const generateCode = useCallback(() => {
     const lines = [
-      'const doc = new jsPDF({',
-      `  orientation: '${orientation}',`,
-      `  unit: 'pt',`,
-      `  format: '${paperSize.toLowerCase()}'`,
+      'const pdf = new PdfWrapper({',
+      `  orient: '${orientation === 'landscape' ? 'l' : 'p'}',`,
+      '  x: 0,',
+      '  y: 0',
       '});',
       '',
-      '// Add elements',
+      '// Initialize page without margins',
+      'pdf.initPage({ header: false, footer: false });',
+      '',
+      '// Add elements'
     ];
 
     elements.forEach(element => {
       if (element.type === 'text' || element.type === 'title') {
         lines.push('');
         lines.push(`// Add ${element.type}`);
-        lines.push(`doc.setFont('helvetica', '${element.fontWeight === 'normal' ? 'normal' : 'bold'}')`);
-        lines.push(`doc.setFontSize(${element.fontSize})`);
-        lines.push(`doc.text('${element.content}',`);
-        lines.push(`  ${Math.round(element.position.x)},`);
-        lines.push(`  ${Math.round(element.position.y)},`);
-        lines.push(`  { align: '${element.textAlign}' }`);
-        lines.push(');');
+        lines.push(`// Calculate baseline offset for text`);
+        lines.push(`const baselineOffset_${element.id} = ${element.fontSize} * 0.75;`);
+        lines.push(`const adjustedY_${element.id} = ${Math.round(element.position.y)} + baselineOffset_${element.id};`);
+        lines.push(`pdf.printText('${element.content}', {`);
+        lines.push(`  x: ${Math.round(element.position.x)},`);
+        lines.push(`  y: adjustedY_${element.id},`);
+        lines.push(`  fontName: '${mapFontToPDF(element.fontFamily)}',`);
+        lines.push(`  fontSize: ${element.fontSize},`);
+        lines.push(`  fontStyle: '${element.fontStyle}',`);
+        lines.push(`  fontWeight: '${element.fontWeight}',`);
+        lines.push(`  align: '${element.textAlign}',`);
+        lines.push(`  color: '${element.borderColor}'`);
+        lines.push('});');
       } else if (element.type === 'chart') {
         lines.push('');
         lines.push('// Add chart');
@@ -38,40 +61,70 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
         lines.push(`chartCanvas.height = ${Math.round(element.height)};`);
         lines.push('const ctx = chartCanvas.getContext("2d");');
         lines.push('// Add your chart data and options here');
-        lines.push(`doc.addImage(chartCanvas.toDataURL(), 'PNG',`);
-        lines.push(`  ${Math.round(element.position.x)},`);
-        lines.push(`  ${Math.round(element.position.y)},`);
-        lines.push(`  ${Math.round(element.width)},`);
-        lines.push(`  ${Math.round(element.height)}`);
-        lines.push(');');
+        lines.push(`pdf.addImage(chartCanvas.toDataURL(), {`);
+        lines.push(`  x: ${Math.round(element.position.x)},`);
+        lines.push(`  y: ${Math.round(element.position.y)},`);
+        lines.push(`  w: ${Math.round(element.width)},`);
+        lines.push(`  h: ${Math.round(element.height)}`);
+        lines.push('});');
+      } else if (element.type === 'image') {
+        lines.push('');
+        lines.push('// Add image');
+        lines.push(`pdf.addImage('${element.content}', {`);
+        lines.push(`  x: ${Math.round(element.position.x)},`);
+        lines.push(`  y: ${Math.round(element.position.y)},`);
+        lines.push(`  w: ${Math.round(element.width)},`);
+        lines.push(`  h: ${Math.round(element.height)}`);
+        lines.push('});');
       }
     });
 
     lines.push('');
-    lines.push('// Open PDF in new tab');
-    lines.push('const pdfDataUri = doc.output("datauristring");');
-    lines.push('window.open(pdfDataUri);');
+    lines.push('// Get PDF as blob and open in new window');
+    lines.push('const pdfBlob = pdf.toBlob();');
+    lines.push('const blobUrl = URL.createObjectURL(pdfBlob);');
+    lines.push('window.open(blobUrl, "_blank");');
+    lines.push('');
+    lines.push('// Clean up blob URL after delay');
+    lines.push('setTimeout(() => {');
+    lines.push('  URL.revokeObjectURL(blobUrl);');
+    lines.push('}, 1000);');
 
     return lines.join('\n');
-  }, [elements, orientation, paperSize]);
+  }, [elements, orientation]);
 
-  const addElement = useCallback((type: string, content: string | ChartData, position: Position) => {
+  const addElement = (element: {
+    type: string;
+    content: string;
+    position: { x: number; y: number; };
+    width: number;
+    height: number;
+    fontSize?: number;
+    fontFamily?: string;
+    fontWeight?: string;
+    fontStyle?: string;
+    textAlign?: 'left' | 'center' | 'right';
+    backgroundColor?: string;
+    borderStyle?: string;
+    borderColor?: string;
+    borderWidth?: number;
+  }) => {
     const newElement: PDFElement = {
       id: Math.random().toString(36).substr(2, 9),
-      type: type as PDFElement['type'],
-      content: typeof content === 'string' ? content : JSON.stringify(content),
-      position,
-      width: 200,
-      height: 100,
-      fontSize: 16,
-      fontFamily: 'Arial',
-      fontWeight: 'normal',
-      fontStyle: 'normal',
-      textAlign: 'left',
-      backgroundColor: 'transparent',
-      borderStyle: 'solid',
-      borderColor: '#000000',
-      borderWidth: 1
+      type: element.type as PDFElement['type'],
+      content: element.content,
+      position: element.position,
+      width: element.width,
+      height: element.height,
+      fontSize: element.fontSize || 16,
+      fontFamily: element.fontFamily || 'Arial',
+      fontWeight: element.fontWeight || 'normal',
+      fontStyle: element.fontStyle || 'normal',
+      textAlign: element.textAlign || 'left',
+      backgroundColor: element.backgroundColor || 'transparent',
+      borderStyle: element.borderStyle || 'solid',
+      borderColor: element.borderColor || '#000000',
+      borderWidth: element.borderWidth || 1
     };
 
     setElements(prev => {
@@ -79,7 +132,7 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
       setGeneratedCode(generateCode());
       return newElements;
     });
-  }, [generateCode]);
+  };
 
   const moveElement = useCallback((id: string, x: number, y: number) => {
     setElements(prev => {

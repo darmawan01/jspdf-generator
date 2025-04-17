@@ -11,6 +11,7 @@ import { Line, Bar, Pie } from 'react-chartjs-2';
 import { ChartData } from 'chart.js';
 import 'chart.js/auto';
 import MediaUploader from './MediaUploader';
+import { elementTemplates } from '../constants/templates';
 
 // Grid size in pixels (must match PDFEditor)
 const GRID_SIZE = 10;
@@ -448,6 +449,45 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
     onContentChange(id, typeof newContent === 'string' ? newContent : JSON.stringify(newContent));
   };
 
+  // Get minimum width from template based on type and content
+  const getMinWidth = () => {
+    // Find matching template
+    const template = Object.values(elementTemplates).find(
+      t => t.type === type && t.content === content
+    );
+    
+    if (template) {
+      return template.minWidth;
+    }
+    
+    // Default values if no template matches
+    switch (type) {
+      case 'text':
+        return 100;
+      case 'title':
+        return 200;
+      case 'image':
+        return 100;
+      case 'chart':
+        return 200;
+      default:
+        return 100;
+    }
+  };
+
+  // Get height per line from template
+  const getHeightPerLine = () => {
+    const template = Object.values(elementTemplates).find(
+      t => t.type === type && t.content === content
+    );
+    
+    if (template) {
+      return template.heightPerLine;
+    }
+    
+    return fontSize * 1.5; // Default line height
+  };
+
   drag(elementRef);
 
   return (
@@ -459,8 +499,10 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
         position: 'absolute',
         left: currentPosition.x,
         top: currentPosition.y,
-        width,
-        height,
+        width: width,
+        minWidth: getMinWidth(),
+        height: height,
+        minHeight: getHeightPerLine(),
         opacity: isDragging ? 0.5 : 1,
         cursor: 'move',
         border: isSelected ? `${borderWidth}px ${borderStyle} ${borderColor}` : 'none',
@@ -473,8 +515,6 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
         transition: isDragging ? 'none' : 'all 0.1s ease',
         zIndex: isSelected ? 1000 : 1,
         outline: isSelected ? '2px solid #2196F3' : 'none',
-        minWidth: type === 'text' || type === 'title' ? '30px' : undefined,
-        minHeight: type === 'text' || type === 'title' ? '20px' : undefined,
       }}
     >
       {/* Position indicator */}
@@ -534,7 +574,10 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
                 '& .MuiInputBase-input': {
                   padding: 0,
                   lineHeight: 1.2,
-                  textAlign
+                  textAlign,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  overflowWrap: 'break-word'
                 }
               }}
             />
@@ -819,7 +862,7 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
             }
           }
         }}
-        container={document.body} // Render directly in body to avoid positioning issues
+        container={document.body}
       >
         <Box sx={{ p: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
           {(type === 'text' || type === 'title') && (

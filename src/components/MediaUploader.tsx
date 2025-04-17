@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { Box, Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Typography, Select, MenuItem, FormControl, InputLabel } from '@mui/material';
+import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputLabel, MenuItem, Select, TextField } from '@mui/material';
 import { ChartData } from 'chart.js';
-import { Line, Bar, Pie } from 'react-chartjs-2';
 import 'chart.js/auto';
+import React, { useState } from 'react';
+import { Bar, Line, Pie } from 'react-chartjs-2';
 
 interface MediaUploaderProps {
   type: 'image' | 'chart';
@@ -16,7 +16,6 @@ interface ChartDataPoint {
 }
 
 const MediaUploader: React.FC<MediaUploaderProps> = ({ type, onComplete, onCancel }) => {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>('');
   const [chartType, setChartType] = useState<'line' | 'bar' | 'pie'>('line');
   const [chartData, setChartData] = useState<ChartDataPoint[]>([
@@ -28,7 +27,6 @@ const MediaUploader: React.FC<MediaUploaderProps> = ({ type, onComplete, onCance
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      setSelectedFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
         setImagePreview(reader.result as string);

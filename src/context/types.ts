@@ -1,4 +1,3 @@
-import { ChartData } from 'chart.js';
 import { createContext } from 'react';
 
 export const PDFContext = createContext<PDFContextType | undefined>(undefined);
@@ -31,10 +30,25 @@ export interface PDFContextType {
   paperSize: string;
   orientation: 'portrait' | 'landscape';
   generatedCode: string;
-  addElement: (type: string, content: string | ChartData, position: Position) => void;
+  addElement: (element: {
+    type: string;
+    content: string;
+    position: { x: number; y: number };
+    width: number;
+    height: number;
+    fontSize?: number;
+    fontFamily?: string;
+    fontWeight?: string;
+    fontStyle?: string;
+    textAlign?: 'left' | 'center' | 'right';
+    backgroundColor?: string;
+    borderStyle?: string;
+    borderColor?: string;
+    borderWidth?: number;
+  }) => void;
   moveElement: (id: string, x: number, y: number) => void;
   resizeElement: (id: string, width: number, height: number) => void;
-  updateElementStyle: (id: string, updates: Partial<PDFElement>) => void;
+  updateElementStyle: (id: string, style: Partial<PDFElement>) => void;
   deleteElement: (id: string) => void;
   setPaperSize: (size: string) => void;
   setOrientation: (orientation: 'portrait' | 'landscape') => void;

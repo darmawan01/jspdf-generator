@@ -3,9 +3,10 @@ import { useDrop } from 'react-dnd';
 import { Box, Paper, Typography, Select, MenuItem, FormControl, InputLabel, TextareaAutosize, Button } from '@mui/material';
 import { usePDFContext } from '../hooks/usePdf';
 import DraggableElement from './DraggableElement';
-import { jsPDF } from 'jspdf';
 import PreviewIcon from '@mui/icons-material/Preview';
 import { Chart, ChartConfiguration } from 'chart.js/auto';
+import { elementTemplates } from '../constants/templates';
+import PdfWrapper from '../components/PDFWrapper';
 
 // Grid configuration
 const CELLS_X = 60; // For A4 width (595 points)
@@ -25,10 +26,38 @@ interface GridCell {
   height: number;
 }
 
+interface DropItem {
+  id?: string;
+  type: string;
+  content: string;
+  x?: number;
+  y?: number;
+  fontSize?: number;
+  fontFamily?: string;
+  fontWeight?: string;
+  fontStyle?: string;
+  textAlign?: 'left' | 'center' | 'right';
+  minWidth?: number;
+  heightPerLine?: number;
+}
+
 export const ItemTypes = {
   ELEMENT: 'element',
   TOOL: 'tool',
 } as const;
+
+// Font mapping to jsPDF supported fonts
+const mapFontToPDF = (font: string): string => {
+  const fontMap: Record<string, string> = {
+    'Arial': 'helvetica',
+    'Helvetica': 'helvetica',
+    'Times New Roman': 'times',
+    'Times': 'times',
+    'Courier New': 'courier',
+    'Courier': 'courier'
+  };
+  return fontMap[font] || 'helvetica';
+};
 
 // Helper function to ensure consistent coordinate calculation
 const calculatePDFCoordinates = (
@@ -41,23 +70,21 @@ const calculatePDFCoordinates = (
   const relativeX = clientX - paperRect.left;
   const relativeY = clientY - paperRect.top;
 
-  // Log screen coordinates for debugging
-  console.log('Screen coordinates:', { relativeX, relativeY });
-  console.log('Paper dimensions (pixels):', { width: paperRect.width, height: paperRect.height });
-
   // Convert screen pixel position to PDF points with rounding for consistency
+  // PDFWrapper uses points (1/72 inch) as its unit
   const pdfX = Math.round((relativeX / paperRect.width) * paperDimensions.width);
   const pdfY = Math.round((relativeY / paperRect.height) * paperDimensions.height);
-  
-  // Log PDF coordinates for debugging
-  console.log('PDF coordinates:', { pdfX, pdfY });
 
-  // Ensure within bounds
-  const boundedX = Math.max(0, Math.min(pdfX, paperDimensions.width));
-  const boundedY = Math.max(0, Math.min(pdfY, paperDimensions.height));
-  
-  return { x: boundedX, y: boundedY };
+  console.log('Coordinate calculation:', {
+    client: { x: clientX, y: clientY },
+    relative: { x: relativeX, y: relativeY },
+    pdf: { x: pdfX, y: pdfY },
+    paperDimensions
+  });
+
+  return { x: pdfX, y: pdfY };
 };
+
 
 const PDFEditor: React.FC = () => {
   const {
@@ -151,24 +178,11 @@ const PDFEditor: React.FC = () => {
 
   const [, drop] = useDrop({
     accept: ['tool', 'element'],
-    drop: (item: { 
-      id?: string; 
-      type: string; 
-      content: string; 
-      x?: number; 
-      y?: number;
-      fontSize?: number;
-      fontFamily?: string;
-      fontWeight?: string;
-      fontStyle?: string;
-      textAlign?: 'left' | 'center' | 'right';
-    }, monitor) => {
+    drop: (item: DropItem, monitor) => {
       const clientOffset = monitor.getClientOffset();
       if (!clientOffset || !paperRef.current) return;
 
-      console.log('DROP - Client offset:', clientOffset);
       const paperRect = paperRef.current.getBoundingClientRect();
-      console.log('DROP - Paper rect:', paperRect);
       
       // Use the shared coordinate calculation function
       const { x: boundedX, y: boundedY } = calculatePDFCoordinates(
@@ -178,10 +192,43 @@ const PDFEditor: React.FC = () => {
         paperDimensions
       );
 
-      console.log('DROP - Final position:', { boundedX, boundedY });
-
       if (!item.id) {
-        addElement(item.type, item.content, { x: boundedX, y: boundedY });
+        // Find matching template
+        const template = Object.values(elementTemplates).find(
+          t => {
+            console.log('Comparing:', {
+              templateType: t.type,
+              itemType: item.type,
+              templateContent: t.content,
+              itemContent: item.content
+            });
+            return t.type === item.type && t.content === item.content;
+          }
+        );
+
+        console.log('Found template:', template);
+
+        // Create a new element with the provided styles
+        const newElement = {
+          type: item.type,
+          content: item.content,
+          position: { x: boundedX, y: boundedY },
+          width: template?.minWidth || 300, // Use template width or default
+          height: template?.heightPerLine || 100, // Use template height or default
+          fontSize: item.fontSize || template?.fontSize || 16,
+          fontFamily: item.fontFamily || template?.fontFamily || 'Arial',
+          fontWeight: item.fontWeight || template?.fontWeight || 'normal',
+          fontStyle: item.fontStyle || 'normal',
+          textAlign: item.textAlign || 'left',
+          backgroundColor: 'transparent',
+          borderStyle: 'none',
+          borderColor: '#000000',
+          borderWidth: 0
+        };
+
+        console.log('Creating new element:', newElement);
+
+        addElement(newElement);
       }
 
       return { x: boundedX, y: boundedY };
@@ -212,26 +259,40 @@ const PDFEditor: React.FC = () => {
   });
 
   const handleExportPDF = () => {
-    const doc = new jsPDF({
-      orientation: orientation === 'landscape' ? 'l' : 'p',
-      unit: 'pt',
-      format: paperSize.toLowerCase()
+    const pdf = new PdfWrapper({
+      orient: orientation === 'landscape' ? 'l' : 'p',
+      x: 0,
+      y: 0
     });
+
+    // Initialize the page without any margins
+    pdf.initPage({ header: false, footer: false });
 
     // Create a promise for each chart rendering
     const chartPromises = elements.map(element => {
       if (element.type === 'text' || element.type === 'title') {
         return Promise.resolve(() => {
-          if (element.fontSize && element.fontWeight) {
-            doc.setFont('helvetica', element.fontWeight === 'normal' ? 'normal' : 'bold');
-            doc.setFontSize(element.fontSize);
-            if (typeof element.content === 'string') {
-              const adjustedY = element.position.y + (element.fontSize * 0.75);
-              doc.text(element.content, element.position.x, adjustedY, {
-                align: element.textAlign || 'left'
-              });
-            }
-          }
+          console.log('Rendering text element:', {
+            id: element.id,
+            content: element.content,
+            position: element.position,
+            fontSize: element.fontSize
+          });
+
+          // Calculate baseline offset for text
+          const baselineOffset = element.fontSize * 0.75; // Approximate baseline offset
+          const adjustedY = element.position.y + baselineOffset;
+
+          pdf.printText(element.content, {
+            x: element.position.x,
+            y: adjustedY,
+            fontName: mapFontToPDF(element.fontFamily),
+            fontSize: element.fontSize,
+            fontStyle: element.fontStyle,
+            fontWeight: element.fontWeight,
+            align: element.textAlign,
+            color: element.borderColor
+          });
         });
       } else if (element.type === 'chart') {
         return new Promise<() => void>((resolve) => {
@@ -245,7 +306,6 @@ const PDFEditor: React.FC = () => {
             const canvas = document.createElement('canvas');
             chartContainer.appendChild(canvas);
 
-            // Create chart instance with proper typing
             const chartConfig: ChartConfiguration = {
               type: chartData.datasets[0].type || 'bar',
               data: chartData,
@@ -265,54 +325,65 @@ const PDFEditor: React.FC = () => {
 
             const chart = new Chart(canvas, chartConfig);
 
-            // Wait for chart to render
             setTimeout(() => {
               const imageData = canvas.toDataURL('image/png');
               resolve(() => {
-                doc.addImage(
-                  imageData,
-                  'PNG',
-                  element.position.x,
-                  element.position.y,
-                  element.width,
-                  element.height
-                );
-                // Cleanup
+                console.log('Rendering chart:', {
+                  id: element.id,
+                  position: element.position,
+                  dimensions: { width: element.width, height: element.height }
+                });
+
+                pdf.addImage(imageData, {
+                  x: element.position.x,
+                  y: element.position.y,
+                  w: element.width,
+                  h: element.height
+                });
                 chart.destroy();
                 document.body.removeChild(chartContainer);
               });
             }, 100);
           } catch (error) {
             console.error('Error rendering chart:', error);
-            resolve(() => {}); // Empty function if chart fails
+            resolve(() => {});
           }
         });
       } else if (element.type === 'image' && typeof element.content === 'string') {
         return Promise.resolve(() => {
-          doc.addImage(
-            element.content,
-            'PNG',
-            element.position.x,
-            element.position.y,
-            element.width,
-            element.height
-          );
+          console.log('Rendering image:', {
+            id: element.id,
+            position: element.position,
+            dimensions: { width: element.width, height: element.height }
+          });
+
+          pdf.addImage(element.content, {
+            x: element.position.x,
+            y: element.position.y,
+            w: element.width,
+            h: element.height
+          });
         });
       }
       return Promise.resolve(() => {});
     });
 
-    // Wait for all charts to render, then add everything to PDF
     Promise.all(chartPromises).then(drawFunctions => {
       drawFunctions.forEach(draw => draw());
       
-      // Create Blob and open in new tab
-      const pdfBlob = doc.output('blob');
+      // Get the PDF as a blob
+      const pdfBlob = pdf.toBlob();
+      
+      // Create a URL for the blob
       const blobUrl = URL.createObjectURL(pdfBlob);
+      
+      // Open in a new window
       window.open(blobUrl, '_blank');
       
-      // Clean up the Blob URL after a delay to ensure it's loaded
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+      // Clean up the blob URL after a delay
+      setTimeout(() => {
+        URL.revokeObjectURL(blobUrl);
+      }, 1000);
     });
   };
 
