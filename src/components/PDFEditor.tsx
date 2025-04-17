@@ -1,12 +1,13 @@
-import React, { useRef, useEffect, useMemo } from 'react';
+import PreviewIcon from '@mui/icons-material/Preview';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import { Box, Button, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Snackbar, TextareaAutosize, Typography } from '@mui/material';
+import { Chart, ChartConfiguration } from 'chart.js/auto';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useDrop } from 'react-dnd';
-import { Box, Paper, Typography, Select, MenuItem, FormControl, InputLabel, TextareaAutosize, Button } from '@mui/material';
+import PdfWrapper from '../components/PDFWrapper';
+import { elementTemplates } from '../constants/templates';
 import { usePDFContext } from '../hooks/usePdf';
 import DraggableElement from './DraggableElement';
-import PreviewIcon from '@mui/icons-material/Preview';
-import { Chart, ChartConfiguration } from 'chart.js/auto';
-import { elementTemplates } from '../constants/templates';
-import PdfWrapper from '../components/PDFWrapper';
 
 // Grid configuration
 const CELLS_X = 60; // For A4 width (595 points)
@@ -59,33 +60,6 @@ const mapFontToPDF = (font: string): string => {
   return fontMap[font] || 'helvetica';
 };
 
-// Helper function to ensure consistent coordinate calculation
-const calculatePDFCoordinates = (
-  clientX: number,
-  clientY: number,
-  paperRect: DOMRect,
-  paperDimensions: { width: number; height: number }
-): { x: number; y: number } => {
-  // Get position relative to paper element (in pixels)
-  const relativeX = clientX - paperRect.left;
-  const relativeY = clientY - paperRect.top;
-
-  // Convert screen pixel position to PDF points with rounding for consistency
-  // PDFWrapper uses points (1/72 inch) as its unit
-  const pdfX = Math.round((relativeX / paperRect.width) * paperDimensions.width);
-  const pdfY = Math.round((relativeY / paperRect.height) * paperDimensions.height);
-
-  console.log('Coordinate calculation:', {
-    client: { x: clientX, y: clientY },
-    relative: { x: relativeX, y: relativeY },
-    pdf: { x: pdfX, y: pdfY },
-    paperDimensions
-  });
-
-  return { x: pdfX, y: pdfY };
-};
-
-
 const PDFEditor: React.FC = () => {
   const {
     elements,
@@ -112,6 +86,54 @@ const PDFEditor: React.FC = () => {
       : { width: dimensions.width, height: dimensions.height };
   })();
 
+  // Calculate display dimensions for responsive design
+  const getDisplayDimensions = () => {
+    const containerWidth = window.innerWidth - 600; // Account for sidebars and padding
+    const containerHeight = window.innerHeight - 200; // Account for header and padding
+
+    // Target to use 80% of available space while maintaining aspect ratio
+    const targetWidth = containerWidth * 0.8;
+    const targetHeight = containerHeight * 0.8;
+
+    const aspectRatio = paperDimensions.width / paperDimensions.height;
+    
+    if (targetWidth / aspectRatio <= targetHeight) {
+      // Width limited
+      return {
+        width: targetWidth,
+        height: targetWidth / aspectRatio,
+        scale: targetWidth / paperDimensions.width
+      };
+    } else {
+      // Height limited
+      return {
+        width: targetHeight * aspectRatio,
+        height: targetHeight,
+        scale: targetHeight / paperDimensions.height
+      };
+    }
+  };
+
+  const [displayDimensions, setDisplayDimensions] = useState(getDisplayDimensions());
+  const [showCopySuccess, setShowCopySuccess] = useState(false);
+
+  // Update display dimensions on window resize
+  useEffect(() => {
+    const handleResize = () => {
+      setDisplayDimensions(getDisplayDimensions());
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Convert display coordinates to PDF coordinates
+  const displayToPdfCoordinates = (displayX: number, displayY: number) => {
+    return {
+      x: displayX / displayDimensions.scale,
+      y: displayY / displayDimensions.scale
+    };
+  };
+
   // Calculate grid cells
   const grid = useMemo(() => {
     const cellWidth = paperDimensions.width / CELLS_X;
@@ -132,7 +154,6 @@ const PDFEditor: React.FC = () => {
     return cells;
   }, [paperDimensions]);
 
-
   // Draw grid on canvas
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -144,7 +165,7 @@ const PDFEditor: React.FC = () => {
     if (!ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
+
     // Draw cell borders
     ctx.strokeStyle = '#e0e0e0';
     ctx.lineWidth = 0.5;
@@ -183,39 +204,41 @@ const PDFEditor: React.FC = () => {
       if (!clientOffset || !paperRef.current) return;
 
       const paperRect = paperRef.current.getBoundingClientRect();
+      const relativeX = clientOffset.x - paperRect.left;
+      const relativeY = clientOffset.y - paperRect.top;
+
+      // Convert to PDF coordinates
+      const pdfCoords = displayToPdfCoordinates(relativeX, relativeY);
       
-      // Use the shared coordinate calculation function
-      const { x: boundedX, y: boundedY } = calculatePDFCoordinates(
-        clientOffset.x,
-        clientOffset.y,
-        paperRect,
-        paperDimensions
-      );
+      // Ensure coordinates are within bounds
+      const boundedX = Math.max(0, Math.min(pdfCoords.x, paperDimensions.width));
+      const boundedY = Math.max(0, Math.min(pdfCoords.y, paperDimensions.height));
 
       if (!item.id) {
-        // Find matching template
         const template = Object.values(elementTemplates).find(
-          t => {
-            console.log('Comparing:', {
-              templateType: t.type,
-              itemType: item.type,
-              templateContent: t.content,
-              itemContent: item.content
-            });
-            return t.type === item.type && t.content === item.content;
-          }
+          t => t.type === item.type && t.content === item.content
         );
 
-        console.log('Found template:', template);
+        // Calculate actual PDF dimensions for the element
+        const elementWidth = template?.minWidth || 300;
+        const elementHeight = template?.heightPerLine || 100;
+        const fontSize = item.fontSize || template?.fontSize || 16;
 
-        // Create a new element with the provided styles
+        console.log('Creating new element with PDF dimensions:', {
+          x: boundedX,
+          y: boundedY,
+          width: elementWidth,
+          height: elementHeight,
+          fontSize
+        });
+
         const newElement = {
           type: item.type,
           content: item.content,
           position: { x: boundedX, y: boundedY },
-          width: template?.minWidth || 300, // Use template width or default
-          height: template?.heightPerLine || 100, // Use template height or default
-          fontSize: item.fontSize || template?.fontSize || 16,
+          width: elementWidth,
+          height: elementHeight,
+          fontSize,
           fontFamily: item.fontFamily || template?.fontFamily || 'Arial',
           fontWeight: item.fontWeight || template?.fontWeight || 'normal',
           fontStyle: item.fontStyle || 'normal',
@@ -226,33 +249,27 @@ const PDFEditor: React.FC = () => {
           borderWidth: 0
         };
 
-        console.log('Creating new element:', newElement);
-
         addElement(newElement);
       }
 
       return { x: boundedX, y: boundedY };
     },
-    hover: (item: { id?: string; type: string; content: string }, monitor) => {
+    hover: (item: { id?: string; type: string; content: string; }, monitor) => {
       if (!item.id || !paperRef.current) return;
 
       const dragPreview = monitor.getSourceClientOffset();
       if (!dragPreview) return;
-
-      // Only log occasionally to avoid console spam
-      if (Math.random() < 0.05) {
-        console.log('HOVER - Source offset:', dragPreview);
-      }
       
       const paperRect = paperRef.current.getBoundingClientRect();
+      const relativeX = dragPreview.x - paperRect.left;
+      const relativeY = dragPreview.y - paperRect.top;
+
+      // Convert to PDF coordinates
+      const pdfCoords = displayToPdfCoordinates(relativeX, relativeY);
       
-      // Use the shared coordinate calculation function
-      const { x: boundedX, y: boundedY } = calculatePDFCoordinates(
-        dragPreview.x,
-        dragPreview.y,
-        paperRect,
-        paperDimensions
-      );
+      // Ensure coordinates are within bounds
+      const boundedX = Math.max(0, Math.min(pdfCoords.x, paperDimensions.width));
+      const boundedY = Math.max(0, Math.min(pdfCoords.y, paperDimensions.height));
 
       moveElement(item.id, boundedX, boundedY);
     }
@@ -346,7 +363,7 @@ const PDFEditor: React.FC = () => {
             }, 100);
           } catch (error) {
             console.error('Error rendering chart:', error);
-            resolve(() => {});
+            resolve(() => { });
           }
         });
       } else if (element.type === 'image' && typeof element.content === 'string') {
@@ -365,21 +382,21 @@ const PDFEditor: React.FC = () => {
           });
         });
       }
-      return Promise.resolve(() => {});
+      return Promise.resolve(() => { });
     });
 
     Promise.all(chartPromises).then(drawFunctions => {
       drawFunctions.forEach(draw => draw());
-      
+
       // Get the PDF as a blob
       const pdfBlob = pdf.toBlob();
-      
+
       // Create a URL for the blob
       const blobUrl = URL.createObjectURL(pdfBlob);
-      
+
       // Open in a new window
       window.open(blobUrl, '_blank');
-      
+
       // Clean up the blob URL after a delay
       setTimeout(() => {
         URL.revokeObjectURL(blobUrl);
@@ -389,6 +406,11 @@ const PDFEditor: React.FC = () => {
 
   const handleContentChange = (id: string, content: string) => {
     updateElementStyle(id, { content });
+  };
+
+  const handleCopyCode = () => {
+    navigator.clipboard.writeText(generatedCode);
+    setShowCopySuccess(true);
   };
 
   return (
@@ -418,12 +440,12 @@ const PDFEditor: React.FC = () => {
             <MenuItem value="landscape">Landscape</MenuItem>
           </Select>
         </FormControl>
-        <Button 
-          variant="contained" 
+        <Button
+          variant="contained"
           color="primary"
           onClick={handleExportPDF}
           startIcon={<PreviewIcon />}
-          sx={{ 
+          sx={{
             backgroundColor: '#2196F3',
             '&:hover': {
               backgroundColor: '#1976D2'
@@ -435,36 +457,38 @@ const PDFEditor: React.FC = () => {
       </Box>
 
       {/* Main content area */}
-      <Box sx={{ 
-        display: 'flex', 
-        flex: 1, 
+      <Box sx={{
+        display: 'flex',
+        flex: 1,
         minHeight: 0,
         overflow: 'hidden'
       }}>
         {/* Center - PDF Paper */}
-        <Box 
+        <Box
           ref={paperContainerRef}
-          sx={{ 
+          sx={{
             flex: 1,
-            p: 2,
+            p: 4,
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'flex-start',
             bgcolor: '#f8f8f8',
             overflow: 'auto',
             '&::-webkit-scrollbar': {
-              width: '8px',
-              height: '8px'
+              width: '12px',
+              height: '12px'
             },
             '&::-webkit-scrollbar-track': {
               background: '#f1f1f1',
+              borderRadius: '6px'
             },
             '&::-webkit-scrollbar-thumb': {
               background: '#888',
-              borderRadius: '4px',
+              borderRadius: '6px',
+              border: '3px solid #f1f1f1'
             },
             '&::-webkit-scrollbar-thumb:hover': {
-              background: '#555',
+              background: '#555'
             }
           }}
         >
@@ -474,11 +498,11 @@ const PDFEditor: React.FC = () => {
               drop(node);
             }}
             sx={{
-              width: `${paperDimensions.width}px`,
-              height: `${paperDimensions.height}px`,
+              width: `${displayDimensions.width}px`,
+              height: `${displayDimensions.height}px`,
               position: 'relative',
               backgroundColor: 'white',
-              boxShadow: '0 0 10px rgba(0,0,0,0.1)',
+              boxShadow: '0 4px 24px rgba(0,0,0,0.1)',
               padding: 0,
               margin: 0,
               boxSizing: 'border-box',
@@ -513,6 +537,8 @@ const PDFEditor: React.FC = () => {
                   onPositionChange={moveElement}
                   onContentChange={handleContentChange}
                   onDelete={deleteElement}
+                  paperDimensions={paperDimensions}
+                  displayScale={displayDimensions.scale}
                 />
               )
             ))}
@@ -520,34 +546,79 @@ const PDFEditor: React.FC = () => {
         </Box>
 
         {/* Right sidebar - Generated Code */}
-        <Box sx={{ 
-          width: '300px', 
+        <Box sx={{
+          width: '300px',
           borderLeft: '1px solid #eee',
-          p: 2,
           display: 'flex',
           flexDirection: 'column',
-          gap: 1,
-          overflow: 'auto'
+          overflow: 'hidden'
         }}>
-          <Typography variant="h6">Generated Code</Typography>
-          <TextareaAutosize
-            value={generatedCode}
-            readOnly
-            style={{
-              width: '100%',
-              height: '100%',
-              minHeight: '500px',
-              fontFamily: 'monospace',
-              padding: '8px',
-              color: 'black',
-              backgroundColor: '#f5f5f5',
-              border: '1px solid #ddd',
-              borderRadius: '4px',
-              resize: 'none'
-            }}
-          />
+          <Box sx={{
+            p: 2,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            borderBottom: '1px solid #eee'
+          }}>
+            <Typography variant="h6">Generated Code</Typography>
+            <IconButton 
+              onClick={handleCopyCode}
+              size="small"
+              sx={{ 
+                color: '#2196F3',
+                '&:hover': {
+                  backgroundColor: 'rgba(33, 150, 243, 0.04)'
+                }
+              }}
+            >
+              <ContentCopyIcon />
+            </IconButton>
+          </Box>
+          <Box sx={{ 
+            flex: 1,
+            overflow: 'auto',
+            p: 2,
+            '&::-webkit-scrollbar': {
+              width: '8px'
+            },
+            '&::-webkit-scrollbar-track': {
+              background: '#f5f5f5'
+            },
+            '&::-webkit-scrollbar-thumb': {
+              background: '#ddd',
+              borderRadius: '4px'
+            },
+            '&::-webkit-scrollbar-thumb:hover': {
+              background: '#ccc'
+            }
+          }}>
+            <TextareaAutosize
+              value={generatedCode}
+              readOnly
+              style={{
+                width: '100%',
+                height: '100%',
+                minHeight: '500px',
+                fontFamily: 'monospace',
+                padding: '8px',
+                color: 'black',
+                backgroundColor: '#f5f5f5',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                resize: 'none'
+              }}
+            />
+          </Box>
         </Box>
       </Box>
+
+      <Snackbar
+        open={showCopySuccess}
+        autoHideDuration={2000}
+        onClose={() => setShowCopySuccess(false)}
+        message="Code copied to clipboard"
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
     </Box>
   );
 };

@@ -12,6 +12,7 @@ import { ChartData } from 'chart.js';
 import 'chart.js/auto';
 import MediaUploader from './MediaUploader';
 import { elementTemplates } from '../constants/templates';
+import { PDFDimensions } from '../types/pdf';
 
 // Grid size in pixels (must match PDFEditor)
 const GRID_SIZE = 10;
@@ -44,6 +45,8 @@ interface DraggableElementProps {
   onPositionChange: (id: string, x: number, y: number) => void;
   onContentChange: (id: string, content: string) => void;
   onDelete?: (id: string) => void;
+  paperDimensions: PDFDimensions;
+  displayScale: number;
 }
 
 const FONT_FAMILIES = [
@@ -96,7 +99,9 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
   onStyleChange,
   onPositionChange,
   onContentChange,
-  onDelete
+  onDelete,
+  paperDimensions,
+  displayScale
 }) => {
   const [isResizing, setIsResizing] = useState(false);
   const [resizeDirection, setResizeDirection] = useState<string | null>(null);
@@ -156,24 +161,34 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
 
       const paperRect = paperElement.getBoundingClientRect();
       
+      // Get the current zoom level
+      const currentZoom = paperRect.width / paperDimensions.width;
+      
       // Get element position relative to paper
       const relativeX = e.clientX - paperRect.left;
       const relativeY = e.clientY - paperRect.top;
+      
+      // Convert to PDF points, accounting for zoom
+      const pdfX = Math.round(relativeX / currentZoom);
+      const pdfY = Math.round(relativeY / currentZoom);
       
       // Log occasionally for debugging
       if (Math.random() < 0.01) {
         console.log('DRAG - Mouse position:', { clientX: e.clientX, clientY: e.clientY });
         console.log('DRAG - Paper rect:', paperRect);
         console.log('DRAG - Relative position:', { relativeX, relativeY });
+        console.log('DRAG - Zoom:', currentZoom);
+        console.log('DRAG - PDF position:', { pdfX, pdfY });
       }
 
-      // Snap to grid
-      const snappedX = snapToGrid(relativeX);
-      const snappedY = snapToGrid(relativeY);
+      // Snap to grid if needed (convert grid size to PDF points)
+      const gridSizeInPoints = GRID_SIZE / currentZoom;
+      const snappedX = snapToGrid(pdfX / gridSizeInPoints) * gridSizeInPoints;
+      const snappedY = snapToGrid(pdfY / gridSizeInPoints) * gridSizeInPoints;
 
       // Ensure element stays completely within paper boundaries
-      const maxX = paperRect.width - width;
-      const maxY = paperRect.height - height;
+      const maxX = paperDimensions.width - width;
+      const maxY = paperDimensions.height - height;
       
       const boundedX = Math.max(0, Math.min(snappedX, maxX));
       const boundedY = Math.max(0, Math.min(snappedY, maxY));
@@ -497,12 +512,12 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
       onDoubleClick={handleDoubleClick}
       sx={{
         position: 'absolute',
-        left: currentPosition.x,
-        top: currentPosition.y,
-        width: width,
-        minWidth: getMinWidth(),
-        height: height,
-        minHeight: getHeightPerLine(),
+        left: `${currentPosition.x * displayScale}px`,
+        top: `${currentPosition.y * displayScale}px`,
+        width: `${width * displayScale}px`,
+        minWidth: `${getMinWidth() * displayScale}px`,
+        height: `${height * displayScale}px`,
+        minHeight: `${getHeightPerLine() * displayScale}px`,
         opacity: isDragging ? 0.5 : 1,
         cursor: 'move',
         border: isSelected ? `${borderWidth}px ${borderStyle} ${borderColor}` : 'none',
@@ -515,6 +530,9 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
         transition: isDragging ? 'none' : 'all 0.1s ease',
         zIndex: isSelected ? 1000 : 1,
         outline: isSelected ? '2px solid #2196F3' : 'none',
+        fontSize: `${fontSize * displayScale}px`,
+        transform: `scale(${1 / displayScale})`,
+        transformOrigin: 'top left'
       }}
     >
       {/* Position indicator */}
@@ -538,14 +556,16 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
         </Typography>
       )}
       <Box sx={{ 
-        width: '100%', 
-        height: '100%', 
+        width: `${width * displayScale}px`, 
+        height: `${height * displayScale}px`,
         display: 'flex',
         alignItems: textAlign === 'center' ? 'center' : 'flex-start',
         justifyContent: textAlign === 'center' ? 'center' : textAlign === 'right' ? 'flex-end' : 'flex-start',
         padding: 0,
         margin: 0,
         boxSizing: 'border-box',
+        transform: `scale(${1 / displayScale})`,
+        transformOrigin: 'top left'
       }}>
         {type === 'text' && (
           isEditing ? (
