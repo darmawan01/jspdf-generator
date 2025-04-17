@@ -1,9 +1,11 @@
 import React, { useRef, useEffect, useMemo } from 'react';
 import { useDrop } from 'react-dnd';
 import { Box, Paper, Typography, Select, MenuItem, FormControl, InputLabel, TextareaAutosize, Button } from '@mui/material';
-import { usePDFContext } from '../context/PDFContext';
+import { usePDFContext } from '../hooks/usePdf';
 import DraggableElement from './DraggableElement';
 import { jsPDF } from 'jspdf';
+import PreviewIcon from '@mui/icons-material/Preview';
+import { Chart, ChartConfiguration } from 'chart.js/auto';
 
 // Grid configuration
 const CELLS_X = 60; // For A4 width (595 points)
@@ -179,16 +181,7 @@ const PDFEditor: React.FC = () => {
       console.log('DROP - Final position:', { boundedX, boundedY });
 
       if (!item.id) {
-        // Extract typography styles from the dragged item
-        const styles = {
-          fontSize: item.fontSize,
-          fontFamily: item.fontFamily,
-          fontWeight: item.fontWeight,
-          fontStyle: item.fontStyle,
-          textAlign: item.textAlign,
-        };
-        
-        addElement(item.type, item.content, boundedX, boundedY, styles);
+        addElement(item.type, item.content, { x: boundedX, y: boundedY });
       }
 
       return { x: boundedX, y: boundedY };
@@ -222,25 +215,105 @@ const PDFEditor: React.FC = () => {
     const doc = new jsPDF({
       orientation: orientation === 'landscape' ? 'l' : 'p',
       unit: 'pt',
-      format: paperSize.toLowerCase(),
+      format: paperSize.toLowerCase()
     });
 
-    // Add elements to PDF
-    elements.forEach(element => {
+    // Create a promise for each chart rendering
+    const chartPromises = elements.map(element => {
       if (element.type === 'text' || element.type === 'title') {
-        doc.setFont('helvetica');
-        doc.setFontSize(element.type === 'title' ? 16 : 12);
-        doc.text(element.content, element.x, element.y);
+        return Promise.resolve(() => {
+          if (element.fontSize && element.fontWeight) {
+            doc.setFont('helvetica', element.fontWeight === 'normal' ? 'normal' : 'bold');
+            doc.setFontSize(element.fontSize);
+            if (typeof element.content === 'string') {
+              const adjustedY = element.position.y + (element.fontSize * 0.75);
+              doc.text(element.content, element.position.x, adjustedY, {
+                align: element.textAlign || 'left'
+              });
+            }
+          }
+        });
       } else if (element.type === 'chart') {
-        // For charts, you would need to convert the canvas to an image
-        // This is a placeholder - you'll need to implement actual chart rendering
-        doc.rect(element.x, element.y, element.width, element.height);
-        doc.text('Chart Placeholder', element.x + 10, element.y + 20);
+        return new Promise<() => void>((resolve) => {
+          try {
+            const chartData = JSON.parse(element.content);
+            const chartContainer = document.createElement('div');
+            chartContainer.style.width = `${element.width}px`;
+            chartContainer.style.height = `${element.height}px`;
+            document.body.appendChild(chartContainer);
+
+            const canvas = document.createElement('canvas');
+            chartContainer.appendChild(canvas);
+
+            // Create chart instance with proper typing
+            const chartConfig: ChartConfiguration = {
+              type: chartData.datasets[0].type || 'bar',
+              data: chartData,
+              options: {
+                responsive: true,
+                animation: {
+                  duration: 0
+                },
+                plugins: {
+                  legend: {
+                    display: true,
+                    position: 'bottom'
+                  }
+                }
+              }
+            };
+
+            const chart = new Chart(canvas, chartConfig);
+
+            // Wait for chart to render
+            setTimeout(() => {
+              const imageData = canvas.toDataURL('image/png');
+              resolve(() => {
+                doc.addImage(
+                  imageData,
+                  'PNG',
+                  element.position.x,
+                  element.position.y,
+                  element.width,
+                  element.height
+                );
+                // Cleanup
+                chart.destroy();
+                document.body.removeChild(chartContainer);
+              });
+            }, 100);
+          } catch (error) {
+            console.error('Error rendering chart:', error);
+            resolve(() => {}); // Empty function if chart fails
+          }
+        });
+      } else if (element.type === 'image' && typeof element.content === 'string') {
+        return Promise.resolve(() => {
+          doc.addImage(
+            element.content,
+            'PNG',
+            element.position.x,
+            element.position.y,
+            element.width,
+            element.height
+          );
+        });
       }
+      return Promise.resolve(() => {});
     });
 
-    // Save the PDF
-    doc.save('generated.pdf');
+    // Wait for all charts to render, then add everything to PDF
+    Promise.all(chartPromises).then(drawFunctions => {
+      drawFunctions.forEach(draw => draw());
+      
+      // Create Blob and open in new tab
+      const pdfBlob = doc.output('blob');
+      const blobUrl = URL.createObjectURL(pdfBlob);
+      window.open(blobUrl, '_blank');
+      
+      // Clean up the Blob URL after a delay to ensure it's loaded
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+    });
   };
 
   const handleContentChange = (id: string, content: string) => {
@@ -250,7 +323,7 @@ const PDFEditor: React.FC = () => {
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Top toolbar */}
-      <Box sx={{ p: 2, display: 'flex', gap: 2, borderBottom: '1px solid #eee' }}>
+      <Box sx={{ p: 2, display: 'flex', gap: 2, borderBottom: '1px solid #eee', alignItems: 'center' }}>
         <FormControl size="small">
           <InputLabel>Paper Size</InputLabel>
           <Select
@@ -278,24 +351,50 @@ const PDFEditor: React.FC = () => {
           variant="contained" 
           color="primary"
           onClick={handleExportPDF}
+          startIcon={<PreviewIcon />}
+          sx={{ 
+            backgroundColor: '#2196F3',
+            '&:hover': {
+              backgroundColor: '#1976D2'
+            }
+          }}
         >
-          Export PDF
+          Preview PDF
         </Button>
       </Box>
 
       {/* Main content area */}
-      <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      <Box sx={{ 
+        display: 'flex', 
+        flex: 1, 
+        minHeight: 0,
+        overflow: 'hidden'
+      }}>
         {/* Center - PDF Paper */}
         <Box 
           ref={paperContainerRef}
           sx={{ 
-            width: 'calc(100% - 300px)', 
-            p: 0,
+            flex: 1,
+            p: 2,
             display: 'flex',
             justifyContent: 'center',
-            alignItems: 'center',
+            alignItems: 'flex-start',
             bgcolor: '#f8f8f8',
-            overflowY: 'auto'
+            overflow: 'auto',
+            '&::-webkit-scrollbar': {
+              width: '8px',
+              height: '8px'
+            },
+            '&::-webkit-scrollbar-track': {
+              background: '#f1f1f1',
+            },
+            '&::-webkit-scrollbar-thumb': {
+              background: '#888',
+              borderRadius: '4px',
+            },
+            '&::-webkit-scrollbar-thumb:hover': {
+              background: '#555',
+            }
           }}
         >
           <Paper
@@ -312,6 +411,7 @@ const PDFEditor: React.FC = () => {
               padding: 0,
               margin: 0,
               boxSizing: 'border-box',
+              flexShrink: 0
             }}
           >
             <canvas
@@ -326,15 +426,24 @@ const PDFEditor: React.FC = () => {
               }}
             />
             {elements.map((element) => (
-              <DraggableElement
-                key={element.id}
-                {...element}
-                onResize={resizeElement}
-                onStyleChange={updateElementStyle}
-                onPositionChange={moveElement}
-                onContentChange={handleContentChange}
-                onDelete={deleteElement}
-              />
+              typeof element.content === 'string' && (
+                <DraggableElement
+                  key={element.id}
+                  {...element}
+                  x={element.position.x}
+                  y={element.position.y}
+                  content={element.content}
+                  backgroundColor={element.backgroundColor || 'white'}
+                  borderStyle={element.borderStyle || 'solid'}
+                  borderColor={element.borderColor || '#000'}
+                  borderWidth={element.borderWidth || 1}
+                  onResize={resizeElement}
+                  onStyleChange={updateElementStyle}
+                  onPositionChange={moveElement}
+                  onContentChange={handleContentChange}
+                  onDelete={deleteElement}
+                />
+              )
             ))}
           </Paper>
         </Box>
@@ -346,7 +455,8 @@ const PDFEditor: React.FC = () => {
           p: 2,
           display: 'flex',
           flexDirection: 'column',
-          gap: 1
+          gap: 1,
+          overflow: 'auto'
         }}>
           <Typography variant="h6">Generated Code</Typography>
           <TextareaAutosize

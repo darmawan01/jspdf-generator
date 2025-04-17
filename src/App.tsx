@@ -5,7 +5,7 @@ import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import PDFEditor from './components/PDFEditor';
 import Toolbar from './components/Toolbar';
-import { PDFProvider } from './context/PDFContext';
+import PDFProvider from './context/PDFContext';
 
 const theme = createTheme({
   palette: {
@@ -19,11 +19,29 @@ function App() {
       <DndProvider backend={HTML5Backend}>
         <ThemeProvider theme={theme}>
           <CssBaseline />
-          <Box sx={{ height: '100vh', display: 'flex', width: '100vw' }}>
-            <Box sx={{ width: '300px', borderRight: 1, borderColor: 'divider' }}>
+          <Box sx={{ 
+            display: 'flex', 
+            height: '100vh', 
+            width: '100vw',
+            overflow: 'hidden'
+          }}>
+            {/* Sidebar */}
+            <Box sx={{ 
+              width: { xs: '250px', md: '300px' },
+              flexShrink: 0,
+              borderRight: 1,
+              borderColor: 'divider',
+              overflowY: 'auto'
+            }}>
               <Toolbar />
             </Box>
-            <Box sx={{ width: 'calc(100vw - 300px)' }}>
+
+            {/* Main Content */}
+            <Box sx={{ 
+              flexGrow: 1,
+              overflow: 'auto',
+              width: { xs: 'calc(100% - 250px)', md: 'calc(100% - 300px)' }
+            }}>
               <PDFEditor />
             </Box>
           </Box>

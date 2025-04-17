@@ -7,6 +7,10 @@ import FormatAlignCenterIcon from '@mui/icons-material/FormatAlignCenter';
 import FormatAlignRightIcon from '@mui/icons-material/FormatAlignRight';
 import FormatItalicIcon from '@mui/icons-material/FormatItalic';
 import TextFieldsIcon from '@mui/icons-material/TextFields';
+import { Line, Bar, Pie } from 'react-chartjs-2';
+import { ChartData } from 'chart.js';
+import 'chart.js/auto';
+import MediaUploader from './MediaUploader';
 
 // Grid size in pixels (must match PDFEditor)
 const GRID_SIZE = 10;
@@ -19,7 +23,7 @@ const snapToGrid = (value: number): number => Math.round(value / GRID_SIZE) * GR
 
 interface DraggableElementProps {
   id: string;
-  type: string;
+  type: 'text' | 'title' | 'image' | 'chart';
   content: string;
   x: number;
   y: number;
@@ -101,6 +105,7 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(content);
   const lastKnownPosition = useRef({ x, y });
+  const [showMediaUploader, setShowMediaUploader] = useState(false);
 
   const elementRef = useRef<HTMLDivElement>(null);
   const gearButtonRef = useRef<HTMLButtonElement>(null);
@@ -213,7 +218,7 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
 
   // Handle arrow key navigation for pixel-by-pixel movement
   useEffect(() => {
-    if (!isSelected) return;
+    if (!isSelected || isEditing) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!elementRef.current?.parentElement) return;
@@ -261,7 +266,7 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
     
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isSelected, currentPosition, width, height, id, onPositionChange, onDelete]);
+  }, [isSelected, isEditing, currentPosition, width, height, id, onPositionChange, onDelete]);
   
   // Handle click outside to deselect the element
   useEffect(() => {
@@ -372,6 +377,8 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
     if (type === 'text' || type === 'title') {
       e.stopPropagation();
       setIsEditing(true);
+    } else if (type === 'image' || type === 'chart') {
+      setShowMediaUploader(true);
     }
   };
 
@@ -390,6 +397,9 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleContentBlur();
+    } else if (e.key === 'Escape') {
+      setIsEditing(false);
+      setEditContent(content); // Reset to original content
     }
   };
 
@@ -433,6 +443,11 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
     handleStyleChange({ fontStyle: newStyle === 'italic' ? 'italic' : 'normal' });
   };
 
+  const handleMediaComplete = (newContent: string | ChartData) => {
+    setShowMediaUploader(false);
+    onContentChange(id, typeof newContent === 'string' ? newContent : JSON.stringify(newContent));
+  };
+
   drag(elementRef);
 
   return (
@@ -452,40 +467,42 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
         backgroundColor: backgroundColor || 'transparent',
         display: 'flex',
         flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '8px',
+        padding: 0,
         margin: 0,
         boxSizing: 'border-box',
         transition: isDragging ? 'none' : 'all 0.1s ease',
         zIndex: isSelected ? 1000 : 1,
         outline: isSelected ? '2px solid #2196F3' : 'none',
-        minWidth: type === 'text' || type === 'title' ? '50px' : undefined,
-        minHeight: type === 'text' || type === 'title' ? '30px' : undefined,
+        minWidth: type === 'text' || type === 'title' ? '30px' : undefined,
+        minHeight: type === 'text' || type === 'title' ? '20px' : undefined,
       }}
     >
-      <Typography 
-        variant="caption" 
-        sx={{ 
-          position: 'absolute', 
-          top: 0,
-          left: 0,
-          margin: 0,
-          padding: '2px',
-          backgroundColor: 'rgba(255,255,255,0.8)',
-          fontSize: '10px',
-          lineHeight: 1,
-          zIndex: 1002,
-        }}
-      >
-        {type} ({Math.round(currentPosition.x)}, {Math.round(currentPosition.y)})
-      </Typography>
+      {/* Position indicator */}
+      {isSelected && (
+        <Typography 
+          variant="caption" 
+          sx={{ 
+            position: 'absolute', 
+            top: -16,
+            left: 0,
+            margin: 0,
+            padding: '2px',
+            backgroundColor: 'rgba(255,255,255,0.8)',
+            fontSize: '10px',
+            lineHeight: 1,
+            zIndex: 1002,
+            pointerEvents: 'none',
+          }}
+        >
+          {type} ({Math.round(currentPosition.x)}, {Math.round(currentPosition.y)})
+        </Typography>
+      )}
       <Box sx={{ 
         width: '100%', 
         height: '100%', 
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        alignItems: textAlign === 'center' ? 'center' : 'flex-start',
+        justifyContent: textAlign === 'center' ? 'center' : textAlign === 'right' ? 'flex-end' : 'flex-start',
         padding: 0,
         margin: 0,
         boxSizing: 'border-box',
@@ -509,13 +526,15 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
                   fontStyle,
                   textAlign,
                   padding: 0,
+                  lineHeight: 1.2,
                   '&:before, &:after': {
                     display: 'none'
                   }
                 },
                 '& .MuiInputBase-input': {
                   padding: 0,
-                  lineHeight: 1.5
+                  lineHeight: 1.2,
+                  textAlign
                 }
               }}
             />
@@ -528,14 +547,13 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
                 fontStyle,
                 textAlign,
                 width: '100%',
-                height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
                 padding: 0,
                 margin: 0,
+                lineHeight: 1.2,
                 whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word'
+                wordBreak: 'break-word',
+                overflowWrap: 'break-word',
+                display: 'block'
               }}
             >
               {content}
@@ -567,7 +585,8 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
                 },
                 '& .MuiInputBase-input': {
                   padding: 0,
-                  lineHeight: 1.5
+                  lineHeight: 1.5,
+                  textAlign
                 }
               }}
             />
@@ -581,21 +600,120 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
                 fontStyle,
                 textAlign,
                 width: '100%',
-                height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
                 padding: 0,
                 margin: 0,
                 whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word'
+                wordBreak: 'break-word',
+                overflowWrap: 'break-word',
+                display: 'block'
               }}
             >
               {content}
             </Typography>
           )
         )}
-        {type === 'image' && <img src={content} alt="Draggable" style={{ maxWidth: '100%', maxHeight: '100%' }} />}
+        {type === 'image' && (
+          content ? (
+            <img 
+              src={content} 
+              alt="Draggable" 
+              style={{ 
+                maxWidth: '100%', 
+                maxHeight: '100%', 
+                objectFit: 'contain' 
+              }} 
+            />
+          ) : (
+            <Box
+              sx={{
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '2px dashed #ccc',
+                borderRadius: 1,
+                backgroundColor: '#f5f5f5',
+                cursor: 'pointer',
+              }}
+              onClick={() => setShowMediaUploader(true)}
+            >
+              <Typography>Click to upload image</Typography>
+            </Box>
+          )
+        )}
+        {type === 'chart' && (
+          content ? (
+            <Box sx={{ width: '100%', height: '100%' }}>
+              {(() => {
+                try {
+                  const chartData = JSON.parse(content);
+                  const chartProps = {
+                    data: chartData,
+                    options: {
+                      responsive: true,
+                      maintainAspectRatio: true,
+                      plugins: {
+                        legend: {
+                          display: true,
+                          position: 'bottom' as const
+                        }
+                      }
+                    }
+                  };
+
+                  switch (chartData.datasets[0].type) {
+                    case 'line':
+                      return <Line {...chartProps} />;
+                    case 'bar':
+                      return <Bar {...chartProps} />;
+                    case 'pie':
+                      return <Pie {...chartProps} />;
+                    default:
+                      return <Bar {...chartProps} />;
+                  }
+                } catch (error) {
+                  console.error('Error rendering chart:', error);
+                  return (
+                    <Box
+                      sx={{
+                        width: '100%',
+                        height: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: '2px dashed #ccc',
+                        borderRadius: 1,
+                        backgroundColor: '#f5f5f5',
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => setShowMediaUploader(true)}
+                    >
+                      <Typography>Click to configure chart</Typography>
+                    </Box>
+                  );
+                }
+              })()}
+            </Box>
+          ) : (
+            <Box
+              sx={{
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '2px dashed #ccc',
+                borderRadius: 1,
+                backgroundColor: '#f5f5f5',
+                cursor: 'pointer',
+              }}
+              onClick={() => setShowMediaUploader(true)}
+            >
+              <Typography>Click to configure chart</Typography>
+            </Box>
+          )
+        )}
       </Box>
 
       {isSelected && (
@@ -669,6 +787,14 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
             onClick={(e) => e.stopPropagation()}
           />
         </>
+      )}
+
+      {showMediaUploader && (
+        <MediaUploader
+          type={type as 'image' | 'chart'}
+          onComplete={handleMediaComplete}
+          onCancel={() => setShowMediaUploader(false)}
+        />
       )}
 
       <Popover
