@@ -531,8 +531,7 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
         zIndex: isSelected ? 1000 : 1,
         outline: isSelected ? '2px solid #2196F3' : 'none',
         fontSize: `${fontSize * displayScale}px`,
-        transform: `scale(${1 / displayScale})`,
-        transformOrigin: 'top left'
+        transform: 'none'
       }}
     >
       {/* Position indicator */}
@@ -549,23 +548,21 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
             fontSize: '10px',
             lineHeight: 1,
             zIndex: 1002,
-            pointerEvents: 'none',
+            pointerEvents: 'none'
           }}
         >
           {type} ({Math.round(currentPosition.x)}, {Math.round(currentPosition.y)})
         </Typography>
       )}
       <Box sx={{ 
-        width: `${width * displayScale}px`, 
-        height: `${height * displayScale}px`,
+        width: '100%', 
+        height: '100%',
         display: 'flex',
         alignItems: textAlign === 'center' ? 'center' : 'flex-start',
         justifyContent: textAlign === 'center' ? 'center' : textAlign === 'right' ? 'flex-end' : 'flex-start',
         padding: 0,
         margin: 0,
-        boxSizing: 'border-box',
-        transform: `scale(${1 / displayScale})`,
-        transformOrigin: 'top left'
+        boxSizing: 'border-box'
       }}>
         {type === 'text' && (
           isEditing ? (
@@ -580,7 +577,7 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
               variant="standard"
               sx={{
                 '& .MuiInputBase-root': {
-                  fontSize: `${fontSize}px`,
+                  fontSize: `${fontSize * displayScale}px`,
                   fontFamily,
                   fontWeight,
                   fontStyle,
@@ -604,7 +601,7 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
           ) : (
             <Typography
               sx={{
-                fontSize: `${fontSize}px`,
+                fontSize: `${fontSize * displayScale}px`,
                 fontFamily,
                 fontWeight,
                 fontStyle,
@@ -636,7 +633,7 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
               variant="standard"
               sx={{
                 '& .MuiInputBase-root': {
-                  fontSize: `${fontSize}px`,
+                  fontSize: `${fontSize * displayScale}px`,
                   fontFamily,
                   fontWeight,
                   fontStyle,
@@ -657,7 +654,7 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
             <Typography
               variant="h6"
               sx={{
-                fontSize: `${fontSize}px`,
+                fontSize: `${fontSize * displayScale}px`,
                 fontFamily,
                 fontWeight,
                 fontStyle,

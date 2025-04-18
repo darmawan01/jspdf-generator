@@ -551,7 +551,8 @@ const PDFEditor: React.FC = () => {
           borderLeft: '1px solid #eee',
           display: 'flex',
           flexDirection: 'column',
-          overflow: 'hidden'
+          overflow: 'hidden',
+          height: 'calc(100vh - 100px)'
         }}>
           <Box sx={{
             p: 2,
@@ -590,15 +591,15 @@ const PDFEditor: React.FC = () => {
             },
             '&::-webkit-scrollbar-thumb:hover': {
               background: '#ccc'
-            }
+            },
+            height: '100%'
           }}>
             <TextareaAutosize
               value={generatedCode}
               readOnly
               style={{
                 width: '100%',
-                height: '100%',
-                minHeight: '500px',
+                height: 'calc(100vh - 230px)',
                 fontFamily: 'monospace',
                 padding: '8px',
                 color: 'black',
