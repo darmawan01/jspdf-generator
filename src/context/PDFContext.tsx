@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { PDFContext, PDFElement } from './types';
+import { PAPER_SIZES } from '../constants/paper';
 
 // Font mapping to jsPDF supported fonts
 const mapFontToPDF = (font: string): string => {
@@ -26,12 +27,23 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
     // Sort elements by z-index for proper rendering order
     const sortedElements = [...elements].sort((a, b) => a.zIndex - b.zIndex);
     
+    // Get paper dimensions
+    const paperDimensions = PAPER_SIZES[paperSize as keyof typeof PAPER_SIZES];
+    const actualWidth = orientation === 'landscape' ? paperDimensions.height : paperDimensions.width;
+    const actualHeight = orientation === 'landscape' ? paperDimensions.width : paperDimensions.height;
+    
     const lines = [
       'const pdf = new PdfWrapper({',
       `  orient: '${orientation === 'landscape' ? 'l' : 'p'}',`,
       '  x: 0,',
       '  y: 0',
       '});',
+      '',
+      '// Set paper size',
+      'const pdfInstance = pdf.getPdfInstance();',
+      'pdfInstance.setPage(1);',
+      `pdfInstance.internal.pageSize.width = ${actualWidth};`,
+      `pdfInstance.internal.pageSize.height = ${actualHeight};`,
       '',
       '// Initialize page without margins',
       'pdf.initPage({ header: false, footer: false });',
@@ -149,7 +161,7 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
     lines.push('}, 1000);');
 
     return lines.join('\n');
-  }, [elements, orientation]);
+  }, [elements, orientation, paperSize]);
 
   const addElement = useCallback((element: Omit<PDFElement, 'id' | 'zIndex'>) => {
     const newElement: PDFElement = {

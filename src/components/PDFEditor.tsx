@@ -1,7 +1,6 @@
 import PreviewIcon from '@mui/icons-material/Preview';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { Box, Button, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Snackbar, TextareaAutosize, Typography } from '@mui/material';
-import { Chart, ChartConfiguration } from 'chart.js/auto';
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useDrop } from 'react-dnd';
 import PdfWrapper from '../components/PDFWrapper';
@@ -326,21 +325,56 @@ const PDFEditor: React.FC = () => {
   });
 
   const handleExportPDF = () => {
+    // Get the actual paper dimensions in points
+    const basePaperDimensions = PAPER_SIZES[paperSize as keyof typeof PAPER_SIZES];
+    
+    // Calculate PDF dimensions based on orientation
+    const pdfWidth = orientation === 'landscape' ? basePaperDimensions.height : basePaperDimensions.width;
+    const pdfHeight = orientation === 'landscape' ? basePaperDimensions.width : basePaperDimensions.height;
+
+    // Calculate the scale factor based on the actual paper dimensions
+    const scaleX = pdfWidth / paperDimensions.width;
+    const scaleY = pdfHeight / paperDimensions.height;
+
     const pdf = new PdfWrapper({
       orient: orientation === 'landscape' ? 'l' : 'p',
       x: 0,
       y: 0
     });
 
+    // Set the paper size
+    const pdfInstance = pdf.getPdfInstance();
+    pdfInstance.setPage(1);
+    pdfInstance.internal.pageSize.width = pdfWidth;
+    pdfInstance.internal.pageSize.height = pdfHeight;
+
     // Initialize the page without any margins
     pdf.initPage({ header: false, footer: false });
+
+    // Draw grid (optional, for debugging)
+    const drawGrid = false; // Set to true to see the grid in PDF
+    if (drawGrid) {
+      pdfInstance.setDrawColor(200, 200, 200);
+      pdfInstance.setLineWidth(0.1);
+
+      // Draw vertical lines
+      for (let x = 0; x <= CELLS_X; x++) {
+        const xPos = (x * pdfWidth) / CELLS_X;
+        pdfInstance.line(xPos, 0, xPos, pdfHeight);
+      }
+
+      // Draw horizontal lines
+      for (let y = 0; y <= CELLS_Y; y++) {
+        const yPos = (y * pdfHeight) / CELLS_Y;
+        pdfInstance.line(0, yPos, pdfWidth, yPos);
+      }
+    }
 
     // Create a promise for each chart rendering
     const chartPromises = elements.map(element => {
       if (element.type === 'text' || element.type === 'title') {
         return Promise.resolve(() => {
           // Set up text properties before measuring
-          const pdfInstance = pdf.getPdfInstance();
           pdfInstance.setFont(mapFontToPDF(element.fontFamily || 'Arial'));
           pdfInstance.setFontSize(element.fontSize || 16);
           
@@ -350,13 +384,13 @@ const PDFEditor: React.FC = () => {
           // Calculate baseline offset for text
           const baselineOffset = (element.fontSize || 16) * 0.75;
 
-          // Calculate text position
-          let textX = element.position.x;
-          let textY = element.position.y + baselineOffset;
+          // Calculate text position with proper scaling
+          let textX = element.position.x * scaleX;
+          let textY = element.position.y * scaleY + baselineOffset;
 
           // If there's padding, adjust the position and available width
-          const padding = element.padding || 0;
-          const availableWidth = element.width - (padding * 2);
+          const padding = (element.padding || 0) * scaleX;
+          const availableWidth = element.width * scaleX - (padding * 2);
           textX += padding;
           textY += padding;
 
@@ -366,16 +400,6 @@ const PDFEditor: React.FC = () => {
           } else if (element.textAlign === 'right') {
             textX += availableWidth - textWidth;
           }
-
-          console.log('Rendering text:', {
-            content: element.content,
-            position: { x: textX, y: textY },
-            elementWidth: element.width,
-            textWidth,
-            padding,
-            availableWidth,
-            align: element.textAlign
-          });
 
           // Print the text
           pdf.printText(element.content, {
@@ -389,63 +413,24 @@ const PDFEditor: React.FC = () => {
             color: element.textColor || '#000000'
           });
         });
-      } else if (element.type === 'divider') {
-        return Promise.resolve(() => {
-          console.log('Rendering divider:', {
-            id: element.id,
-            position: element.position,
-            width: element.width,
-            height: element.height,
-            borderColor: element.borderColor,
-            borderWidth: element.borderWidth
-          });
-
-          // Draw divider as a filled rectangle
-          const pdfInstance = pdf.getPdfInstance();
-          pdfInstance.setDrawColor(element.borderColor || '#000000');
-          pdfInstance.setFillColor(element.borderColor || '#000000');
-          
-          pdf.rect(
-            element.position.x,
-            element.position.y,
-            element.width,
-            element.height,
-            'F'
-          );
-        });
       } else if (element.type === 'card') {
         return Promise.resolve(() => {
-          console.log('Rendering card:', {
-            id: element.id,
-            position: element.position,
-            width: element.width,
-            height: element.height,
-            backgroundColor: element.backgroundColor,
-            borderColor: element.borderColor,
-            borderWidth: element.borderWidth,
-            borderRadius: element.borderRadius,
-            padding: element.padding,
-            scale: displayDimensions.scale
-          });
-
           // Draw card background
-          const pdfInstance = pdf.getPdfInstance();
-          
           // Set border color and width if border is enabled
           if (element.borderWidth && element.borderWidth > 0) {
             pdfInstance.setDrawColor(element.borderColor || '#000000');
-            pdfInstance.setLineWidth(element.borderWidth / displayDimensions.scale);
+            pdfInstance.setLineWidth(element.borderWidth * scaleX);
           }
 
           // If shadow is enabled, draw it first
           if (element.shadow) {
             pdfInstance.setFillColor(200, 200, 200);
             pdf.roundedRect(
-              element.position.x + (2 / displayDimensions.scale),
-              element.position.y + (2 / displayDimensions.scale),
-              element.width,
-              element.height,
-              element.borderRadius ? element.borderRadius / displayDimensions.scale : 0,
+              element.position.x * scaleX + (2 * scaleX),
+              element.position.y * scaleY + (2 * scaleY),
+              element.width * scaleX,
+              element.height * scaleY,
+              element.borderRadius ? element.borderRadius * scaleX : 0,
               'F'
             );
           }
@@ -454,110 +439,55 @@ const PDFEditor: React.FC = () => {
           pdfInstance.setFillColor(element.backgroundColor || '#ffffff');
           if (element.borderRadius && element.borderRadius > 0) {
             pdf.roundedRect(
-              element.position.x,
-              element.position.y,
-              element.width,
-              element.height,
-              element.borderRadius / displayDimensions.scale,
+              element.position.x * scaleX,
+              element.position.y * scaleY,
+              element.width * scaleX,
+              element.height * scaleY,
+              element.borderRadius * scaleX,
               element.borderWidth && element.borderWidth > 0 ? 'FD' : 'F'
             );
           } else {
             pdf.rect(
-              element.position.x,
-              element.position.y,
-              element.width,
-              element.height,
+              element.position.x * scaleX,
+              element.position.y * scaleY,
+              element.width * scaleX,
+              element.height * scaleY,
               element.borderWidth && element.borderWidth > 0 ? 'FD' : 'F'
             );
           }
         });
-      } else if (element.type === 'chart') {
-        return new Promise<() => void>((resolve) => {
-          try {
-            const chartData = JSON.parse(element.content);
-            const chartContainer = document.createElement('div');
-            chartContainer.style.width = `${element.width}px`;
-            chartContainer.style.height = `${element.height}px`;
-            document.body.appendChild(chartContainer);
-
-            const canvas = document.createElement('canvas');
-            chartContainer.appendChild(canvas);
-
-            const chartConfig: ChartConfiguration = {
-              type: chartData.datasets[0].type || 'bar',
-              data: chartData,
-              options: {
-                responsive: true,
-                animation: {
-                  duration: 0
-                },
-                plugins: {
-                  legend: {
-                    display: true,
-                    position: 'bottom'
-                  }
-                }
-              }
-            };
-
-            const chart = new Chart(canvas, chartConfig);
-
-            setTimeout(() => {
-              const imageData = canvas.toDataURL('image/png');
-              resolve(() => {
-                console.log('Rendering chart:', {
-                  id: element.id,
-                  position: element.position,
-                  dimensions: { width: element.width, height: element.height }
-                });
-
-                pdf.addImage(imageData, {
-                  x: element.position.x,
-                  y: element.position.y,
-                  w: element.width,
-                  h: element.height
-                });
-                chart.destroy();
-                document.body.removeChild(chartContainer);
-              });
-            }, 100);
-          } catch (error) {
-            console.error('Error rendering chart:', error);
-            resolve(() => { });
-          }
-        });
-      } else if (element.type === 'image' && typeof element.content === 'string') {
+      } else if (element.type === 'chart' || element.type === 'image') {
         return Promise.resolve(() => {
-          console.log('Rendering image:', {
-            id: element.id,
-            position: element.position,
-            dimensions: { width: element.width, height: element.height }
-          });
-
           pdf.addImage(element.content, {
-            x: element.position.x,
-            y: element.position.y,
-            w: element.width,
-            h: element.height
+            x: element.position.x * scaleX,
+            y: element.position.y * scaleY,
+            w: element.width * scaleX,
+            h: element.height * scaleY
           });
+        });
+      } else if (element.type === 'divider') {
+        return Promise.resolve(() => {
+          pdfInstance.setDrawColor(element.borderColor || '#000000');
+          pdfInstance.setFillColor(element.borderColor || '#000000');
+          pdfInstance.setLineWidth(element.height * scaleY);
+          
+          pdf.rect(
+            element.position.x * scaleX,
+            element.position.y * scaleY,
+            element.width * scaleX,
+            element.height * scaleY,
+            'F'
+          );
         });
       }
-      return Promise.resolve(() => { });
+      return Promise.resolve(() => {});
     });
 
     Promise.all(chartPromises).then(drawFunctions => {
       drawFunctions.forEach(draw => draw());
-
-      // Get the PDF as a blob
       const pdfBlob = pdf.toBlob();
-
-      // Create a URL for the blob
       const blobUrl = URL.createObjectURL(pdfBlob);
-
-      // Open in a new window
       window.open(blobUrl, '_blank');
-
-      // Clean up the blob URL after a delay
       setTimeout(() => {
         URL.revokeObjectURL(blobUrl);
       }, 1000);
