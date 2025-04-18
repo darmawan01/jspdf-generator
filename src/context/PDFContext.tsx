@@ -23,6 +23,9 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
   const [generatedCode, setGeneratedCode] = useState('');
 
   const generateCode = useCallback(() => {
+    // Sort elements by z-index for proper rendering order
+    const sortedElements = [...elements].sort((a, b) => a.zIndex - b.zIndex);
+    
     const lines = [
       'const pdf = new PdfWrapper({',
       `  orient: '${orientation === 'landscape' ? 'l' : 'p'}',`,
@@ -36,22 +39,40 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
       '// Add elements'
     ];
 
-    elements.forEach(element => {
+    sortedElements.forEach(element => {
       if (element.type === 'text' || element.type === 'title') {
         lines.push('');
         lines.push(`// Add ${element.type}`);
-        lines.push(`// Calculate baseline offset for text`);
-        lines.push(`const baselineOffset_${element.id} = ${element.fontSize} * 0.75;`);
-        lines.push(`const adjustedY_${element.id} = ${Math.round(element.position.y)} + baselineOffset_${element.id};`);
+        lines.push(`// Set up text properties`);
+        lines.push(`const pdfInstance_${element.id} = pdf.getPdfInstance();`);
+        lines.push(`pdfInstance_${element.id}.setFont('${mapFontToPDF(element.fontFamily || 'Arial')}');`);
+        lines.push(`pdfInstance_${element.id}.setFontSize(${element.fontSize || 16});`);
+        lines.push(`const textWidth_${element.id} = pdfInstance_${element.id}.getTextWidth('${element.content}');`);
+        lines.push(`const baselineOffset_${element.id} = ${element.fontSize || 16} * 0.75;`);
+        lines.push(`const padding_${element.id} = ${element.padding || 0};`);
+        lines.push(`const availableWidth_${element.id} = ${element.width} - (padding_${element.id} * 2);`);
+        lines.push('');
+        lines.push(`// Calculate text position`);
+        lines.push(`let textX_${element.id} = ${Math.round(element.position.x)} + padding_${element.id};`);
+        lines.push(`let textY_${element.id} = ${Math.round(element.position.y)} + baselineOffset_${element.id} + padding_${element.id};`);
+        lines.push('');
+        lines.push(`// Adjust position based on alignment`);
+        if (element.textAlign === 'center') {
+          lines.push(`textX_${element.id} += (availableWidth_${element.id} - textWidth_${element.id}) / 2;`);
+        } else if (element.textAlign === 'right') {
+          lines.push(`textX_${element.id} += availableWidth_${element.id} - textWidth_${element.id};`);
+        }
+        lines.push('');
+        lines.push(`// Print the text`);
         lines.push(`pdf.printText('${element.content}', {`);
-        lines.push(`  x: ${Math.round(element.position.x)},`);
-        lines.push(`  y: adjustedY_${element.id},`);
-        lines.push(`  fontName: '${mapFontToPDF(element.fontFamily)}',`);
-        lines.push(`  fontSize: ${element.fontSize},`);
-        lines.push(`  fontStyle: '${element.fontStyle}',`);
-        lines.push(`  fontWeight: '${element.fontWeight}',`);
-        lines.push(`  align: '${element.textAlign}',`);
-        lines.push(`  color: '${element.borderColor}'`);
+        lines.push(`  x: textX_${element.id},`);
+        lines.push(`  y: textY_${element.id},`);
+        lines.push(`  fontName: '${mapFontToPDF(element.fontFamily || 'Arial')}',`);
+        lines.push(`  fontSize: ${element.fontSize || 16},`);
+        lines.push(`  fontStyle: '${element.fontStyle || 'normal'}',`);
+        lines.push(`  fontWeight: '${element.fontWeight || 'normal'}',`);
+        lines.push(`  align: 'left',`);
+        lines.push(`  color: '${element.textColor || '#000000'}'`);
         lines.push('});');
       } else if (element.type === 'chart') {
         lines.push('');
@@ -76,6 +97,43 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
         lines.push(`  w: ${Math.round(element.width)},`);
         lines.push(`  h: ${Math.round(element.height)}`);
         lines.push('});');
+      } else if (element.type === 'card') {
+        lines.push('');
+        lines.push('// Add card background');
+        lines.push(`const pdfInstance = pdf.getPdfInstance();`);
+        
+        // Set border color and width if border is enabled
+        if (element.borderWidth && element.borderWidth > 0) {
+          lines.push(`pdfInstance.setDrawColor('${element.borderColor || '#000000'}');`);
+          lines.push(`pdfInstance.setLineWidth(${element.borderWidth});`);
+        }
+
+        // If shadow is enabled, draw it first
+        if (element.shadow) {
+          lines.push(`// Draw shadow`);
+          lines.push(`pdfInstance.setFillColor(200, 200, 200);`);
+          lines.push(`pdf.roundedRect(${Math.round(element.position.x + 2)}, ${Math.round(element.position.y + 2)}, ${Math.round(element.width)}, ${Math.round(element.height)}, ${element.borderRadius || 0}, 'F');`);
+        }
+
+        // Draw the main rectangle with border radius if specified
+        lines.push(`// Draw main rectangle`);
+        lines.push(`pdfInstance.setFillColor('${element.backgroundColor || '#ffffff'}');`);
+        if (element.borderRadius && element.borderRadius > 0) {
+          lines.push(`// Draw rounded rectangle with border radius`);
+          lines.push(`pdf.roundedRect(${Math.round(element.position.x)}, ${Math.round(element.position.y)}, ${Math.round(element.width)}, ${Math.round(element.height)}, ${element.borderRadius}, '${element.borderWidth && element.borderWidth > 0 ? 'FD' : 'F'}');`);
+        } else {
+          lines.push(`// Draw regular rectangle`);
+          lines.push(`pdf.rect(${Math.round(element.position.x)}, ${Math.round(element.position.y)}, ${Math.round(element.width)}, ${Math.round(element.height)}, '${element.borderWidth && element.borderWidth > 0 ? 'FD' : 'F'}');`);
+        }
+      } else if (element.type === 'divider') {
+        lines.push('');
+        lines.push('// Add divider');
+        lines.push(`pdfInstance.setDrawColor('${element.borderColor || '#000000'}');`);
+        lines.push(`pdfInstance.setFillColor('${element.borderColor || '#000000'}');`);
+        lines.push(`pdfInstance.setLineWidth(${element.height || 1});`);
+        
+        // Draw the divider as a filled rectangle
+        lines.push(`pdf.rect(${Math.round(element.position.x)}, ${Math.round(element.position.y)}, ${Math.round(element.width)}, ${Math.round(element.height)}, 'F');`);
       }
     });
 
@@ -93,38 +151,11 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
     return lines.join('\n');
   }, [elements, orientation]);
 
-  const addElement = (element: {
-    type: string;
-    content: string;
-    position: { x: number; y: number; };
-    width: number;
-    height: number;
-    fontSize?: number;
-    fontFamily?: string;
-    fontWeight?: string;
-    fontStyle?: string;
-    textAlign?: 'left' | 'center' | 'right';
-    backgroundColor?: string;
-    borderStyle?: string;
-    borderColor?: string;
-    borderWidth?: number;
-  }) => {
+  const addElement = useCallback((element: Omit<PDFElement, 'id' | 'zIndex'>) => {
     const newElement: PDFElement = {
+      ...element,
       id: Math.random().toString(36).substr(2, 9),
-      type: element.type as PDFElement['type'],
-      content: element.content,
-      position: element.position,
-      width: element.width,
-      height: element.height,
-      fontSize: element.fontSize || 16,
-      fontFamily: element.fontFamily || 'Arial',
-      fontWeight: element.fontWeight || 'normal',
-      fontStyle: element.fontStyle || 'normal',
-      textAlign: element.textAlign || 'left',
-      backgroundColor: element.backgroundColor || 'transparent',
-      borderStyle: element.borderStyle || 'solid',
-      borderColor: element.borderColor || '#000000',
-      borderWidth: element.borderWidth || 1
+      zIndex: elements.length // New elements are added on top
     };
 
     setElements(prev => {
@@ -132,7 +163,7 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
       setGeneratedCode(generateCode());
       return newElements;
     });
-  };
+  }, [elements.length, generateCode]);
 
   const moveElement = useCallback((id: string, x: number, y: number) => {
     setElements(prev => {
@@ -172,6 +203,85 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
     });
   }, [generateCode]);
 
+  // Stacking operations
+  const bringForward = useCallback((id: string) => {
+    setElements(prev => {
+      const index = prev.findIndex(el => el.id === id);
+      if (index === -1 || index === prev.length - 1) return prev;
+
+      const newElements = [...prev];
+      const element = newElements[index];
+      const nextElement = newElements[index + 1];
+      
+      // Swap positions
+      newElements[index] = nextElement;
+      newElements[index + 1] = element;
+      
+      // Update zIndex values
+      newElements.forEach((el, i) => {
+        el.zIndex = i;
+      });
+      
+      return newElements;
+    });
+  }, []);
+
+  const sendBackward = useCallback((id: string) => {
+    setElements(prev => {
+      const index = prev.findIndex(el => el.id === id);
+      if (index <= 0) return prev;
+
+      const newElements = [...prev];
+      const element = newElements[index];
+      const prevElement = newElements[index - 1];
+      
+      // Swap positions
+      newElements[index] = prevElement;
+      newElements[index - 1] = element;
+      
+      // Update zIndex values
+      newElements.forEach((el, i) => {
+        el.zIndex = i;
+      });
+      
+      return newElements;
+    });
+  }, []);
+
+  const bringToFront = useCallback((id: string) => {
+    setElements(prev => {
+      const element = prev.find(el => el.id === id);
+      if (!element) return prev;
+
+      const newElements = prev.filter(el => el.id !== id);
+      newElements.push(element);
+      
+      // Update zIndex values
+      newElements.forEach((el, i) => {
+        el.zIndex = i;
+      });
+      
+      return newElements;
+    });
+  }, []);
+
+  const sendToBack = useCallback((id: string) => {
+    setElements(prev => {
+      const element = prev.find(el => el.id === id);
+      if (!element) return prev;
+
+      const newElements = prev.filter(el => el.id !== id);
+      newElements.unshift(element);
+      
+      // Update zIndex values
+      newElements.forEach((el, i) => {
+        el.zIndex = i;
+      });
+      
+      return newElements;
+    });
+  }, []);
+
   const value = {
     elements,
     paperSize,
@@ -182,6 +292,10 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
     resizeElement,
     updateElementStyle,
     deleteElement,
+    bringForward,
+    sendBackward,
+    bringToFront,
+    sendToBack,
     setPaperSize: useCallback((size: string) => {
       setPaperSize(size);
       setGeneratedCode(generateCode());

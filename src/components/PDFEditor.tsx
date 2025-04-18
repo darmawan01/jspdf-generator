@@ -71,6 +71,10 @@ const PDFEditor: React.FC = () => {
     resizeElement,
     updateElementStyle,
     deleteElement,
+    bringForward,
+    sendBackward,
+    bringToFront,
+    sendToBack,
     setPaperSize,
     setOrientation,
   } = usePDFContext();
@@ -209,31 +213,39 @@ const PDFEditor: React.FC = () => {
 
       // Convert to PDF coordinates
       const pdfCoords = displayToPdfCoordinates(relativeX, relativeY);
+
+      // Get the element's dimensions
+      const template = Object.values(elementTemplates).find(
+        t => t.type === item.type && t.content === item.content
+      );
       
-      // Ensure coordinates are within bounds
-      const boundedX = Math.max(0, Math.min(pdfCoords.x, paperDimensions.width));
-      const boundedY = Math.max(0, Math.min(pdfCoords.y, paperDimensions.height));
+      // Convert template dimensions to PDF points
+      const elementWidth = (template?.minWidth || 300) / displayDimensions.scale;
+      const elementHeight = (template?.heightPerLine || 100) / displayDimensions.scale;
+      
+      // Calculate maximum allowed positions to keep element within bounds
+      const maxX = paperDimensions.width - elementWidth;
+      const maxY = paperDimensions.height - elementHeight;
+      
+      // Ensure coordinates are within bounds considering element dimensions
+      const boundedX = Math.max(0, Math.min(pdfCoords.x, maxX));
+      const boundedY = Math.max(0, Math.min(pdfCoords.y, maxY));
 
       if (!item.id) {
-        const template = Object.values(elementTemplates).find(
-          t => t.type === item.type && t.content === item.content
-        );
-
-        // Calculate actual PDF dimensions for the element
-        const elementWidth = template?.minWidth || 300;
-        const elementHeight = template?.heightPerLine || 100;
-        const fontSize = item.fontSize || template?.fontSize || 16;
+        const fontSize = (item.fontSize || template?.fontSize || 16) / displayDimensions.scale;
 
         console.log('Creating new element with PDF dimensions:', {
           x: boundedX,
           y: boundedY,
           width: elementWidth,
           height: elementHeight,
-          fontSize
+          fontSize,
+          scale: displayDimensions.scale,
+          type: item.type
         });
 
         const newElement = {
-          type: item.type,
+          type: item.type as 'text' | 'title' | 'image' | 'chart' | 'divider' | 'card',
           content: item.content,
           position: { x: boundedX, y: boundedY },
           width: elementWidth,
@@ -243,10 +255,11 @@ const PDFEditor: React.FC = () => {
           fontWeight: item.fontWeight || template?.fontWeight || 'normal',
           fontStyle: item.fontStyle || 'normal',
           textAlign: item.textAlign || 'left',
-          backgroundColor: 'transparent',
+          backgroundColor: template?.backgroundColor || 'transparent',
           borderStyle: 'none',
           borderColor: '#000000',
-          borderWidth: 0
+          borderWidth: 0,
+          padding: item.type === 'card' ? 10 / displayDimensions.scale : 0
         };
 
         addElement(newElement);
@@ -266,10 +279,18 @@ const PDFEditor: React.FC = () => {
 
       // Convert to PDF coordinates
       const pdfCoords = displayToPdfCoordinates(relativeX, relativeY);
+
+      // Get the element's current dimensions
+      const element = elements.find(el => el.id === item.id);
+      if (!element) return;
+
+      // Calculate maximum allowed positions
+      const maxX = paperDimensions.width - element.width;
+      const maxY = paperDimensions.height - element.height;
       
-      // Ensure coordinates are within bounds
-      const boundedX = Math.max(0, Math.min(pdfCoords.x, paperDimensions.width));
-      const boundedY = Math.max(0, Math.min(pdfCoords.y, paperDimensions.height));
+      // Ensure coordinates are within bounds considering element dimensions
+      const boundedX = Math.max(0, Math.min(pdfCoords.x, maxX));
+      const boundedY = Math.max(0, Math.min(pdfCoords.y, maxY));
 
       moveElement(item.id, boundedX, boundedY);
     }
@@ -289,27 +310,137 @@ const PDFEditor: React.FC = () => {
     const chartPromises = elements.map(element => {
       if (element.type === 'text' || element.type === 'title') {
         return Promise.resolve(() => {
-          console.log('Rendering text element:', {
-            id: element.id,
-            content: element.content,
-            position: element.position,
-            fontSize: element.fontSize
-          });
-
+          // Set up text properties before measuring
+          const pdfInstance = pdf.getPdfInstance();
+          pdfInstance.setFont(mapFontToPDF(element.fontFamily || 'Arial'));
+          pdfInstance.setFontSize(element.fontSize || 16);
+          
+          // Get text width for alignment calculations
+          const textWidth = pdfInstance.getTextWidth(element.content);
+          
           // Calculate baseline offset for text
-          const baselineOffset = element.fontSize * 0.75; // Approximate baseline offset
-          const adjustedY = element.position.y + baselineOffset;
+          const baselineOffset = (element.fontSize || 16) * 0.75;
 
-          pdf.printText(element.content, {
-            x: element.position.x,
-            y: adjustedY,
-            fontName: mapFontToPDF(element.fontFamily),
-            fontSize: element.fontSize,
-            fontStyle: element.fontStyle,
-            fontWeight: element.fontWeight,
-            align: element.textAlign,
-            color: element.borderColor
+          // Calculate text position
+          let textX = element.position.x;
+          let textY = element.position.y + baselineOffset;
+
+          // If there's padding, adjust the position and available width
+          const padding = element.padding || 0;
+          const availableWidth = element.width - (padding * 2);
+          textX += padding;
+          textY += padding;
+
+          // Adjust X position based on text alignment within the available width
+          if (element.textAlign === 'center') {
+            textX += (availableWidth - textWidth) / 2;
+          } else if (element.textAlign === 'right') {
+            textX += availableWidth - textWidth;
+          }
+
+          console.log('Rendering text:', {
+            content: element.content,
+            position: { x: textX, y: textY },
+            elementWidth: element.width,
+            textWidth,
+            padding,
+            availableWidth,
+            align: element.textAlign
           });
+
+          // Print the text
+          pdf.printText(element.content, {
+            x: textX,
+            y: textY,
+            fontName: mapFontToPDF(element.fontFamily || 'Arial'),
+            fontSize: element.fontSize || 16,
+            fontStyle: element.fontStyle || 'normal',
+            fontWeight: element.fontWeight || 'normal',
+            align: 'left', // We handle alignment manually through x position
+            color: element.textColor || '#000000'
+          });
+        });
+      } else if (element.type === 'divider') {
+        return Promise.resolve(() => {
+          console.log('Rendering divider:', {
+            id: element.id,
+            position: element.position,
+            width: element.width,
+            height: element.height,
+            borderColor: element.borderColor,
+            borderWidth: element.borderWidth
+          });
+
+          // Draw divider as a filled rectangle
+          const pdfInstance = pdf.getPdfInstance();
+          pdfInstance.setDrawColor(element.borderColor || '#000000');
+          pdfInstance.setFillColor(element.borderColor || '#000000');
+          
+          pdf.rect(
+            element.position.x,
+            element.position.y,
+            element.width,
+            element.height,
+            'F'
+          );
+        });
+      } else if (element.type === 'card') {
+        return Promise.resolve(() => {
+          console.log('Rendering card:', {
+            id: element.id,
+            position: element.position,
+            width: element.width,
+            height: element.height,
+            backgroundColor: element.backgroundColor,
+            borderColor: element.borderColor,
+            borderWidth: element.borderWidth,
+            borderRadius: element.borderRadius,
+            padding: element.padding,
+            scale: displayDimensions.scale
+          });
+
+          // Draw card background
+          const pdfInstance = pdf.getPdfInstance();
+          
+          // Set border color and width if border is enabled
+          if (element.borderWidth && element.borderWidth > 0) {
+            pdfInstance.setDrawColor(element.borderColor || '#000000');
+            pdfInstance.setLineWidth(element.borderWidth / displayDimensions.scale);
+          }
+
+          // If shadow is enabled, draw it first
+          if (element.shadow) {
+            pdfInstance.setFillColor(200, 200, 200);
+            pdf.roundedRect(
+              element.position.x + (2 / displayDimensions.scale),
+              element.position.y + (2 / displayDimensions.scale),
+              element.width,
+              element.height,
+              element.borderRadius ? element.borderRadius / displayDimensions.scale : 0,
+              'F'
+            );
+          }
+
+          // Draw the main rectangle with border radius if specified
+          pdfInstance.setFillColor(element.backgroundColor || '#ffffff');
+          if (element.borderRadius && element.borderRadius > 0) {
+            pdf.roundedRect(
+              element.position.x,
+              element.position.y,
+              element.width,
+              element.height,
+              element.borderRadius / displayDimensions.scale,
+              element.borderWidth && element.borderWidth > 0 ? 'FD' : 'F'
+            );
+          } else {
+            pdf.rect(
+              element.position.x,
+              element.position.y,
+              element.width,
+              element.height,
+              element.borderWidth && element.borderWidth > 0 ? 'FD' : 'F'
+            );
+          }
         });
       } else if (element.type === 'chart') {
         return new Promise<() => void>((resolve) => {
@@ -449,6 +580,10 @@ const PDFEditor: React.FC = () => {
             backgroundColor: '#2196F3',
             '&:hover': {
               backgroundColor: '#1976D2'
+            },
+            '&:active': {
+              border: 'none',
+              outline: 'none'
             }
           }}
         >
@@ -527,16 +662,19 @@ const PDFEditor: React.FC = () => {
                   {...element}
                   x={element.position.x}
                   y={element.position.y}
-                  content={element.content}
-                  backgroundColor={element.backgroundColor || 'white'}
+                  backgroundColor={element.backgroundColor || 'transparent'}
                   borderStyle={element.borderStyle || 'solid'}
-                  borderColor={element.borderColor || '#000'}
+                  borderColor={element.borderColor || '#000000'}
                   borderWidth={element.borderWidth || 1}
                   onResize={resizeElement}
                   onStyleChange={updateElementStyle}
                   onPositionChange={moveElement}
                   onContentChange={handleContentChange}
                   onDelete={deleteElement}
+                  bringForward={bringForward}
+                  sendBackward={sendBackward}
+                  bringToFront={bringToFront}
+                  sendToBack={sendToBack}
                   paperDimensions={paperDimensions}
                   displayScale={displayDimensions.scale}
                 />

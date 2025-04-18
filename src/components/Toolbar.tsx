@@ -64,29 +64,15 @@ const DraggableTool: React.FC<DraggableToolProps> = ({ type, content, label, def
 };
 
 const Toolbar: React.FC = () => {
-  const chartTemplates: Record<string, ChartData> = {
-    bar: {
-      labels: ['A', 'B', 'C'],
-      datasets: [{
-        type: 'bar',
-        data: [1, 2, 3]
-      }]
-    },
-    line: {
-      labels: ['A', 'B', 'C'],
-      datasets: [{
-        type: 'line',
-        data: [1, 2, 3]
-      }]
-    },
-    pie: {
-      labels: ['A', 'B', 'C'],
-      datasets: [{
-        type: 'pie',
-        data: [1, 2, 3]
-      }]
+  // Group templates by their group property
+  const groupedTemplates = Object.values(elementTemplates).reduce((acc, template) => {
+    const group = template.group || 'other';
+    if (!acc[group]) {
+      acc[group] = [];
     }
-  };
+    acc[group].push(template);
+    return acc;
+  }, {} as Record<string, typeof elementTemplates[keyof typeof elementTemplates][]>);
 
   return (
     <Box sx={{ 
@@ -118,57 +104,34 @@ const Toolbar: React.FC = () => {
         Widgets
       </Typography>
 
-      <Typography variant="subtitle2" sx={{ 
-        mt: 2, 
-        mb: 1, 
-        fontSize: { xs: '0.75rem', sm: '0.8125rem', md: '0.875rem' },
-        fontWeight: 500
-      }}>
-        Typography
-      </Typography>
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-        {Object.values(elementTemplates).map((template, index) => (
-          <DraggableTool
-            key={index}
-            type={template.type}
-            content={template.content}
-            label={template.label}
-            defaultStyles={{
-              fontSize: template.fontSize,
-              fontWeight: template.fontWeight,
-              fontFamily: template.fontFamily
-            }}
-          />
-        ))}
-      </Box>
-
-      <Divider sx={{ my: 2 }} />
-
-      <Typography variant="subtitle2" sx={{ 
-        mb: 1, 
-        fontSize: { xs: '0.75rem', sm: '0.8125rem', md: '0.875rem' },
-        fontWeight: 500
-      }}>
-        Media
-      </Typography>
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-        <DraggableTool type="image" content="image-url" label="Image" />
-      </Box>
-
-      <Divider sx={{ my: 2 }} />
-
-      <Typography variant="subtitle2" sx={{ 
-        mb: 1, 
-        fontSize: { xs: '0.75rem', sm: '0.8125rem', md: '0.875rem' },
-        fontWeight: 500
-      }}>
-        Charts
-      </Typography>
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-        <DraggableTool type="chart" content={chartTemplates.bar} label="Bar Chart" />
-        <DraggableTool type="chart" content={chartTemplates.line} label="Line Chart" />
-        <DraggableTool type="chart" content={chartTemplates.pie} label="Pie Chart" />
-      </Box>
+      {Object.entries(groupedTemplates).map(([group, templates], index) => (
+        <React.Fragment key={group}>
+          {index > 0 && <Divider sx={{ my: 2 }} />}
+          <Typography variant="subtitle2" sx={{ 
+            mb: 1, 
+            fontSize: { xs: '0.75rem', sm: '0.8125rem', md: '0.875rem' },
+            fontWeight: 500,
+            textTransform: 'capitalize'
+          }}>
+            {group}
+          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {templates.map((template, templateIndex) => (
+              <DraggableTool
+                key={templateIndex}
+                type={template.type}
+                content={template.content}
+                label={template.label}
+                defaultStyles={{
+                  fontSize: template.fontSize,
+                  fontWeight: template.fontWeight,
+                  fontFamily: template.fontFamily
+                }}
+              />
+            ))}
+          </Box>
+        </React.Fragment>
+      ))}
     </Box>
   );
 };

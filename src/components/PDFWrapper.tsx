@@ -338,6 +338,9 @@ export default class PdfWrapper {
   rect(x: number, y: number, w: number, h: number, style: string) {
     this.pdf.rect(x, y, w, h, style);
   }
+  roundedRect(x: number, y: number, w: number, h: number, radius: number, style: string) {
+    this.pdf.roundedRect(x, y, w, h, radius, radius, style);
+  }
   line(x1: number, y1: number, x2: number, y2: number) {
     this.pdf.line(x1, y1, x2, y2);
   }

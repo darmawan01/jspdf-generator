@@ -9,20 +9,25 @@ export interface Position {
 
 export interface PDFElement {
   id: string;
-  type: 'text' | 'title' | 'image' | 'chart';
+  type: 'text' | 'title' | 'image' | 'chart' | 'divider' | 'card';
   content: string;
   position: Position;
   width: number;
   height: number;
-  fontSize: number;
-  fontFamily: string;
-  fontWeight: string;
-  fontStyle: string;
-  textAlign: 'left' | 'center' | 'right';
-  backgroundColor: string;
-  borderStyle: string;
-  borderColor: string;
-  borderWidth: number;
+  fontSize?: number;
+  fontFamily?: string;
+  fontWeight?: string;
+  fontStyle?: string;
+  textAlign?: 'left' | 'center' | 'right';
+  backgroundColor?: string;
+  borderStyle?: string;
+  borderColor?: string;
+  borderWidth?: number;
+  textColor?: string;
+  borderRadius?: number;
+  padding?: number;
+  shadow?: boolean;
+  zIndex: number;
 }
 
 export interface PDFContextType {
@@ -30,26 +35,15 @@ export interface PDFContextType {
   paperSize: string;
   orientation: 'portrait' | 'landscape';
   generatedCode: string;
-  addElement: (element: {
-    type: string;
-    content: string;
-    position: { x: number; y: number };
-    width: number;
-    height: number;
-    fontSize?: number;
-    fontFamily?: string;
-    fontWeight?: string;
-    fontStyle?: string;
-    textAlign?: 'left' | 'center' | 'right';
-    backgroundColor?: string;
-    borderStyle?: string;
-    borderColor?: string;
-    borderWidth?: number;
-  }) => void;
+  addElement: (element: Omit<PDFElement, 'id' | 'zIndex'>) => void;
   moveElement: (id: string, x: number, y: number) => void;
   resizeElement: (id: string, width: number, height: number) => void;
-  updateElementStyle: (id: string, style: Partial<PDFElement>) => void;
+  updateElementStyle: (id: string, updates: Partial<PDFElement>) => void;
   deleteElement: (id: string) => void;
   setPaperSize: (size: string) => void;
   setOrientation: (orientation: 'portrait' | 'landscape') => void;
+  bringForward: (id: string) => void;
+  sendBackward: (id: string) => void;
+  bringToFront: (id: string) => void;
+  sendToBack: (id: string) => void;
 } 
