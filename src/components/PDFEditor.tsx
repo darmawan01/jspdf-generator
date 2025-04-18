@@ -2,7 +2,7 @@ import PreviewIcon from '@mui/icons-material/Preview';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { Box, Button, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Snackbar, TextareaAutosize, Typography } from '@mui/material';
 import { Chart, ChartConfiguration } from 'chart.js/auto';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useDrop } from 'react-dnd';
 import PdfWrapper from '../components/PDFWrapper';
 import { elementTemplates } from '../constants/templates';
@@ -83,15 +83,15 @@ const PDFEditor: React.FC = () => {
   const paperContainerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const paperDimensions = (() => {
+  const paperDimensions = useMemo(() => {
     const dimensions = PAPER_SIZES[paperSize as keyof typeof PAPER_SIZES];
     return orientation === 'landscape'
       ? { width: dimensions.height, height: dimensions.width }
       : { width: dimensions.width, height: dimensions.height };
-  })();
+  }, [paperSize, orientation]);
 
   // Calculate display dimensions for responsive design
-  const getDisplayDimensions = () => {
+  const getDisplayDimensions = useCallback(() => {
     const containerWidth = window.innerWidth - 600; // Account for sidebars and padding
     const containerHeight = window.innerHeight - 200; // Account for header and padding
 
@@ -116,10 +116,15 @@ const PDFEditor: React.FC = () => {
         scale: targetHeight / paperDimensions.height
       };
     }
-  };
+  }, [paperDimensions]);
 
   const [displayDimensions, setDisplayDimensions] = useState(getDisplayDimensions());
   const [showCopySuccess, setShowCopySuccess] = useState(false);
+
+  // Update display dimensions when paper size or orientation changes
+  useEffect(() => {
+    setDisplayDimensions(getDisplayDimensions());
+  }, [paperSize, orientation, getDisplayDimensions]);
 
   // Update display dimensions on window resize
   useEffect(() => {
@@ -128,7 +133,31 @@ const PDFEditor: React.FC = () => {
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  }, [getDisplayDimensions]);
+
+  // Handle orientation change
+  const handleOrientationChange = (newOrientation: 'portrait' | 'landscape') => {
+    if (newOrientation === orientation) return;
+
+    // Update orientation
+    setOrientation(newOrientation);
+
+    // Adjust element positions and dimensions for the new orientation
+    elements.forEach(element => {
+      const oldX = element.position.x;
+      const oldY = element.position.y;
+      const oldWidth = element.width;
+      const oldHeight = element.height;
+
+      // Calculate new position to maintain relative position in new orientation
+      const newX = oldY * (paperDimensions.height / paperDimensions.width);
+      const newY = oldX * (paperDimensions.width / paperDimensions.height);
+
+      // Update element position and dimensions
+      moveElement(element.id, newX, newY);
+      resizeElement(element.id, oldWidth, oldHeight);
+    });
+  };
 
   // Convert display coordinates to PDF coordinates
   const displayToPdfCoordinates = (displayX: number, displayY: number) => {
@@ -564,7 +593,7 @@ const PDFEditor: React.FC = () => {
           <InputLabel>Orientation</InputLabel>
           <Select
             value={orientation}
-            onChange={(e) => setOrientation(e.target.value as 'portrait' | 'landscape')}
+            onChange={(e) => handleOrientationChange(e.target.value as 'portrait' | 'landscape')}
             label="Orientation"
           >
             <MenuItem value="portrait">Portrait</MenuItem>
@@ -641,7 +670,8 @@ const PDFEditor: React.FC = () => {
               padding: 0,
               margin: 0,
               boxSizing: 'border-box',
-              flexShrink: 0
+              flexShrink: 0,
+              transition: 'width 0.3s ease, height 0.3s ease'
             }}
           >
             <canvas
