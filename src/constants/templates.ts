@@ -80,7 +80,7 @@ export const elementTemplates: Record<string, ElementTemplate> = {
     content: 'divider',
     label: 'Divider',
     minWidth: 100,
-    heightPerLine: 10,
+    heightPerLine: 2,
     borderWidth: 1,
     borderColor: '#000000',
     borderStyle: 'solid',

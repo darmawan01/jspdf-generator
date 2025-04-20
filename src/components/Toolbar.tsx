@@ -1,10 +1,13 @@
-import React from 'react';
-import { Box, Paper, Typography, Divider } from '@mui/material';
+import React, { useState } from 'react';
+import { Box, Paper, Typography, Divider, IconButton, Collapse } from '@mui/material';
 import { useDrag } from 'react-dnd';
 import { ChartData } from 'chart.js';
 import { elementTemplates } from '../constants/templates';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import { ChartContent } from '../types/chart';
 
-type ToolContent = string | ChartData;
+type ToolContent = string | ChartData | ChartContent;
 
 interface DraggableToolProps {
   type: string;
@@ -74,6 +77,16 @@ const Toolbar: React.FC = () => {
     return acc;
   }, {} as Record<string, typeof elementTemplates[keyof typeof elementTemplates][]>);
 
+  // State to track which groups are expanded
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+
+  const handleGroupToggle = (group: string) => {
+    setExpandedGroups(prev => ({
+      ...prev,
+      [group]: !prev[group]
+    }));
+  };
+
   return (
     <Box sx={{ 
       p: { xs: 1, sm: 1.5, md: 2 }, 
@@ -107,28 +120,47 @@ const Toolbar: React.FC = () => {
       {Object.entries(groupedTemplates).map(([group, templates], index) => (
         <React.Fragment key={group}>
           {index > 0 && <Divider sx={{ my: 2 }} />}
-          <Typography variant="subtitle2" sx={{ 
-            mb: 1, 
-            fontSize: { xs: '0.75rem', sm: '0.8125rem', md: '0.875rem' },
-            fontWeight: 500,
-            textTransform: 'capitalize'
-          }}>
-            {group}
-          </Typography>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {templates.map((template, templateIndex) => (
-              <DraggableTool
-                key={templateIndex}
-                type={template.type}
-                content={template.content}
-                label={template.label}
-                defaultStyles={{
-                  fontSize: template.fontSize,
-                  fontWeight: template.fontWeight,
-                  fontFamily: template.fontFamily
-                }}
-              />
-            ))}
+            <Box 
+              sx={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between',
+                cursor: 'pointer',
+                '&:hover': { bgcolor: '#f5f5f5' },
+                p: 1,
+                borderRadius: 1
+              }}
+              onClick={() => handleGroupToggle(group)}
+            >
+              <Typography variant="subtitle2" sx={{ 
+                fontSize: { xs: '0.75rem', sm: '0.8125rem', md: '0.875rem' },
+                fontWeight: 500,
+                textTransform: 'capitalize'
+              }}>
+                {group}
+              </Typography>
+              <IconButton size="small">
+                {expandedGroups[group] ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+              </IconButton>
+            </Box>
+            <Collapse in={expandedGroups[group]}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, pl: 2 }}>
+                {templates.map((template, templateIndex) => (
+                  <DraggableTool
+                    key={templateIndex}
+                    type={template.type}
+                    content={template.content}
+                    label={template.label}
+                    defaultStyles={{
+                      fontSize: template.fontSize,
+                      fontWeight: template.fontWeight,
+                      fontFamily: template.fontFamily
+                    }}
+                  />
+                ))}
+              </Box>
+            </Collapse>
           </Box>
         </React.Fragment>
       ))}

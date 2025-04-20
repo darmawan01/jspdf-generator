@@ -47,4 +47,8 @@ export interface PDFContextType {
   sendBackward: (id: string) => void;
   bringToFront: (id: string) => void;
   sendToBack: (id: string) => void;
+  saveDesign: () => string;
+  loadDesign: (designString: string) => boolean;
+  setGeneratedCode: (code: string) => void;
+  generateCode: () => string;
 } 

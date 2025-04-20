@@ -587,11 +587,20 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
         newWidth = Math.max(50 / currentZoom, relativeX);
         break;
       case 'bottom':
-        newHeight = Math.max(30 / currentZoom, relativeY);
+        // Allow dividers to be resized to a smaller height
+        if (type === 'divider') {
+          newHeight = Math.max(1 / currentZoom, relativeY);
+        } else {
+          newHeight = Math.max(30 / currentZoom, relativeY);
+        }
         break;
       case 'bottomRight':
         newWidth = Math.max(50 / currentZoom, relativeX);
-        newHeight = Math.max(30 / currentZoom, relativeY);
+        if (type === 'divider') {
+          newHeight = Math.max(1 / currentZoom, relativeY);
+        } else {
+          newHeight = Math.max(30 / currentZoom, relativeY);
+        }
         break;
     }
 

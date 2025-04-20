@@ -294,6 +294,55 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
     });
   }, []);
 
+  const saveDesign = (): string => {
+    const design = {
+      elements,
+      paperSize,
+      orientation,
+      version: '1.0'
+    };
+    return JSON.stringify(design);
+  };
+
+  const loadDesign = (designString: string): boolean => {
+    try {
+      const design = JSON.parse(designString);
+      if (design.version !== '1.0') {
+        throw new Error('Invalid design version');
+      }
+      
+      // Clear existing elements
+      setElements([]);
+      
+      // Set paper size and orientation
+      setPaperSize(design.paperSize);
+      setOrientation(design.orientation);
+      
+      // Add elements with new IDs
+      const newElements: PDFElement[] = [];
+      design.elements.forEach((element: Omit<PDFElement, 'id' | 'zIndex'>) => {
+        const newElement: PDFElement = {
+          ...element,
+          id: Math.random().toString(36).substr(2, 9),
+          zIndex: newElements.length
+        };
+        newElements.push(newElement);
+      });
+      
+      // Update elements and trigger code generation
+      setElements(newElements);
+      // Force a state update to ensure elements are set before generating code
+      setTimeout(() => {
+        setGeneratedCode(generateCode());
+      }, 1000);
+      
+      return true;
+    } catch (error) {
+      console.error('Error loading design:', error);
+      return false;
+    }
+  };
+
   const value = {
     elements,
     paperSize,
@@ -315,7 +364,11 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
     setOrientation: useCallback((o: 'portrait' | 'landscape') => {
       setOrientation(o);
       setGeneratedCode(generateCode());
-    }, [generateCode])
+    }, [generateCode]),
+    saveDesign,
+    loadDesign,
+    setGeneratedCode,
+    generateCode
   };
 
   return <PDFContext.Provider value={value}>{children}</PDFContext.Provider>;

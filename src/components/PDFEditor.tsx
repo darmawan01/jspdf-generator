@@ -1,5 +1,7 @@
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import PreviewIcon from '@mui/icons-material/Preview';
+import DownloadIcon from '@mui/icons-material/Download';
+import UploadIcon from '@mui/icons-material/Upload';
 import { Box, Button, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Snackbar, TextareaAutosize, Typography } from '@mui/material';
 import ChartJS from 'chart.js/auto';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -78,11 +80,16 @@ const PDFEditor: React.FC = () => {
     sendToBack,
     setPaperSize,
     setOrientation,
+    saveDesign,
+    loadDesign,
+    setGeneratedCode,
+    generateCode
   } = usePDFContext();
 
   const paperRef = useRef<HTMLDivElement>(null);
   const paperContainerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const paperDimensions = useMemo(() => {
     const dimensions = PAPER_SIZES[paperSize as keyof typeof PAPER_SIZES];
@@ -264,16 +271,6 @@ const PDFEditor: React.FC = () => {
       if (!item.id) {
         const fontSize = (item.fontSize || template?.fontSize || 16) / displayDimensions.scale;
 
-        console.log('Creating new element with PDF dimensions:', {
-          x: boundedX,
-          y: boundedY,
-          width: elementWidth,
-          height: elementHeight,
-          fontSize,
-          scale: displayDimensions.scale,
-          type: item.type
-        });
-
         const newElement = {
           type: item.type as 'text' | 'title' | 'image' | 'chart' | 'divider' | 'card',
           content: item.content,
@@ -293,6 +290,8 @@ const PDFEditor: React.FC = () => {
         };
 
         addElement(newElement);
+        // Trigger code generation after adding element
+        setGeneratedCode(generateCode());
       }
 
       return { x: boundedX, y: boundedY };
@@ -323,6 +322,8 @@ const PDFEditor: React.FC = () => {
       const boundedY = Math.max(0, Math.min(pdfCoords.y, maxY));
 
       moveElement(item.id, boundedX, boundedY);
+      // Trigger code generation after moving element
+      setGeneratedCode(generateCode());
     }
   });
 
@@ -583,6 +584,37 @@ const PDFEditor: React.FC = () => {
     setShowCopySuccess(true);
   };
 
+  const handleExportDesign = () => {
+    const design = saveDesign();
+    const blob = new Blob([design], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'design.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportDesign = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const designString = e.target?.result as string;
+      if (loadDesign(designString)) {
+        // Success
+        console.log('Design loaded successfully');
+      } else {
+        // Error
+        console.error('Failed to load design');
+      }
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Top toolbar */}
@@ -615,19 +647,30 @@ const PDFEditor: React.FC = () => {
           color="primary"
           onClick={handleExportPDF}
           startIcon={<PreviewIcon />}
-          sx={{
-            backgroundColor: '#2196F3',
-            '&:hover': {
-              backgroundColor: '#1976D2'
-            },
-            '&:active': {
-              border: 'none',
-              outline: 'none'
-            }
-          }}
         >
           Preview PDF
         </Button>
+        <Button
+          variant="outlined"
+          onClick={handleExportDesign}
+          startIcon={<DownloadIcon />}
+        >
+          Export Design
+        </Button>
+        <Button
+          variant="outlined"
+          onClick={() => fileInputRef.current?.click()}
+          startIcon={<UploadIcon />}
+        >
+          Import Design
+        </Button>
+        <input
+          type="file"
+          ref={fileInputRef}
+          style={{ display: 'none' }}
+          accept=".json"
+          onChange={handleImportDesign}
+        />
       </Box>
 
       {/* Main content area */}
