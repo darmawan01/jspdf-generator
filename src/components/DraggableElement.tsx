@@ -1,24 +1,27 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useDrag } from 'react-dnd';
-import { Box, Typography, IconButton, FormControl, InputLabel, Select, MenuItem, TextField, Slider, Popover, ToggleButton, ToggleButtonGroup, FormControlLabel, Switch, Paper } from '@mui/material';
+import { Box, Typography, IconButton, FormControl, InputLabel, Select, MenuItem, TextField, Slider, Popover, ToggleButton, ToggleButtonGroup, FormControlLabel, Switch, Paper, Button } from '@mui/material';
 import { getEmptyImage } from 'react-dnd-html5-backend';
 import FormatAlignLeftIcon from '@mui/icons-material/FormatAlignLeft';
 import FormatAlignCenterIcon from '@mui/icons-material/FormatAlignCenter';
 import FormatAlignRightIcon from '@mui/icons-material/FormatAlignRight';
 import FormatItalicIcon from '@mui/icons-material/FormatItalic';
 import TextFieldsIcon from '@mui/icons-material/TextFields';
-import { Line, Bar, Pie } from 'react-chartjs-2';
-import { ChartData } from 'chart.js';
-import 'chart.js/auto';
-import MediaUploader from './MediaUploader';
-import { elementTemplates } from '../constants/templates';
-import { PDFDimensions } from '../types/pdf';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
 import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
 import SettingsIcon from '@mui/icons-material/Settings';
+import ColorPicker from './ColorPicker';
+import MediaUploader from './MediaUploader';
+import { elementTemplates } from '../constants/templates';
+import { PDFDimensions, ContentType } from '../types/pdf';
+import { Chart as ChartJS, ChartConfiguration, registerables } from 'chart.js';
+import 'chart.js/auto';
+
+// Register all chart components
+ChartJS.register(...registerables);
 
 // Grid size in pixels (must match PDFEditor)
 const GRID_SIZE = 10;
@@ -32,7 +35,7 @@ const snapToGrid = (value: number): number => Math.round(value / GRID_SIZE) * GR
 interface DraggableElementProps {
   id: string;
   type: 'text' | 'title' | 'image' | 'chart' | 'divider' | 'card';
-  content: string;
+  content: ContentType;
   x: number;
   y: number;
   width: number;
@@ -50,7 +53,7 @@ interface DraggableElementProps {
   onResize: (id: string, width: number, height: number) => void;
   onStyleChange: (id: string, updates: Partial<DraggableElementProps>) => void;
   onPositionChange: (id: string, x: number, y: number) => void;
-  onContentChange: (id: string, content: string) => void;
+  onContentChange: (id: string, content: ContentType) => void;
   onDelete?: (id: string) => void;
   bringForward: (id: string) => void;
   sendBackward: (id: string) => void;
@@ -93,6 +96,219 @@ const FONT_WEIGHTS = [
   '900'
 ];
 
+interface ChartDataset {
+  label?: string;
+  data: number[];
+  backgroundColor?: string;
+  borderColor?: string;
+  borderWidth?: number;
+}
+
+interface ChartContent {
+  type: 'bar' | 'line' | 'pie' | 'doughnut';
+  data: {
+    labels: string[];
+    datasets: ChartDataset[];
+  };
+  options?: {
+    responsive?: boolean;
+    maintainAspectRatio?: boolean;
+    scales?: {
+      y?: {
+        beginAtZero?: boolean;
+      };
+    };
+  };
+}
+
+interface ChartConfig {
+  type: 'line' | 'bar' | 'pie' | 'doughnut';
+  data: {
+    labels: string[];
+    datasets: ChartDataset[];
+  };
+  options?: {
+    responsive?: boolean;
+    maintainAspectRatio?: boolean;
+    scales?: {
+      y?: {
+        beginAtZero?: boolean;
+      };
+    };
+  };
+}
+
+interface ChartRendererProps {
+  config: ChartConfig;
+}
+
+const ChartRenderer: React.FC<ChartRendererProps> = ({ config }) => {
+  const chartRef = useRef<HTMLCanvasElement>(null);
+  const chartInstance = useRef<ChartJS | null>(null);
+
+  useEffect(() => {
+    if (chartRef.current) {
+      // Destroy existing chart if it exists
+      if (chartInstance.current) {
+        chartInstance.current.destroy();
+      }
+
+      // Create new chart with proper configuration
+      const ctx = chartRef.current.getContext('2d');
+      if (!ctx) return;
+
+      chartInstance.current = new ChartJS(ctx, {
+        type: config.type,
+        data: {
+          labels: config.data.labels,
+          datasets: config.data.datasets.map(dataset => ({
+            label: dataset.label,
+            data: dataset.data,
+            backgroundColor: dataset.backgroundColor || 'rgba(54, 162, 235, 0.5)',
+            borderColor: dataset.borderColor || 'rgba(54, 162, 235, 1)',
+            borderWidth: dataset.borderWidth || 1
+          }))
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          ...config.options
+        }
+      });
+    }
+
+    return () => {
+      if (chartInstance.current) {
+        chartInstance.current.destroy();
+      }
+    };
+  }, [config]);
+
+  return (
+    <Box sx={{ 
+      width: '100%', 
+      height: '100%', 
+      position: 'relative',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center'
+    }}>
+      <canvas
+        ref={chartRef}
+        style={{
+          width: '100%',
+          height: '100%',
+          display: 'block'
+        }}
+      />
+    </Box>
+  );
+};
+
+interface ChartSettings {
+  type: 'bar' | 'line' | 'pie' | 'doughnut';
+  labels: string[];
+  datasets: {
+    label: string;
+    data: number[];
+    backgroundColor?: string;
+    borderColor?: string;
+    borderWidth?: number;
+  }[];
+  options?: {
+    responsive?: boolean;
+    maintainAspectRatio?: boolean;
+    scales?: {
+      y?: {
+        beginAtZero?: boolean;
+      };
+    };
+  };
+}
+
+const DEFAULT_CHART_DATA: ChartSettings = {
+  type: 'bar',
+  labels: ['January', 'February', 'March', 'April', 'May', 'June'],
+  datasets: [
+    {
+      label: 'Dataset 1',
+      data: [12, 19, 3, 5, 2, 3],
+      backgroundColor: 'rgba(54, 162, 235, 0.5)',
+      borderColor: 'rgba(54, 162, 235, 1)',
+      borderWidth: 1
+    }
+  ],
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      y: {
+        beginAtZero: true
+      }
+    }
+  }
+};
+
+// Move chart config logic outside component
+const getChartConfig = (content: ContentType, onContentChange: (content: ContentType) => void) => {
+  let chartContent: ChartContent;
+  if (!content) {
+    // Initialize with default data if no content
+    chartContent = {
+      type: 'bar',
+      data: {
+        labels: DEFAULT_CHART_DATA.labels,
+        datasets: DEFAULT_CHART_DATA.datasets
+      },
+      options: DEFAULT_CHART_DATA.options
+    };
+    // Set the initial content
+    onContentChange(JSON.stringify(chartContent));
+  } else {
+    chartContent = typeof content === 'string' 
+      ? JSON.parse(content) 
+      : content;
+  }
+
+  return {
+    type: chartContent.type || 'bar',
+    data: {
+      labels: chartContent.data?.labels || DEFAULT_CHART_DATA.labels,
+      datasets: (chartContent.data?.datasets || DEFAULT_CHART_DATA.datasets).map((dataset: ChartDataset) => ({
+        label: dataset.label || 'Dataset',
+        data: dataset.data || [],
+        backgroundColor: dataset.backgroundColor || 'rgba(54, 162, 235, 0.2)',
+        borderColor: dataset.borderColor || 'rgba(54, 162, 235, 1)',
+        borderWidth: dataset.borderWidth || 1
+      }))
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      ...(chartContent.options || {})
+    }
+  };
+};
+
+interface ChartWrapperProps {
+  content: ContentType;
+  onContentChange: (content: ContentType) => void;
+}
+
+const ChartWrapper: React.FC<ChartWrapperProps> = ({ content, onContentChange }) => {
+  // Only re-render when content changes
+  const chartConfig = useMemo(() => 
+    getChartConfig(content, onContentChange),
+    [content] // Only depend on content changes
+  );
+
+  return (
+    <Box sx={{ width: '100%', height: '100%', position: 'relative' }}>
+      <ChartRenderer config={chartConfig} />
+    </Box>
+  );
+};
+
 const DraggableElement: React.FC<DraggableElementProps> = ({
   id,
   type,
@@ -133,11 +349,15 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
   const [currentPosition, setCurrentPosition] = useState({ x, y });
   const [isSelected, setIsSelected] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [editContent, setEditContent] = useState(content);
+  const [editContent, setEditContent] = useState<ContentType>(content);
   const lastKnownPosition = useRef({ x, y });
   const [showMediaUploader, setShowMediaUploader] = useState(false);
   const elementRef = useRef<HTMLDivElement>(null);
   const hideTimeoutRef = useRef<number | null>(null);
+  const [chartSettings, setChartSettings] = useState<ChartSettings>(DEFAULT_CHART_DATA);
+
+  // Disable drag when settings are open
+  const isSettingsOpen = Boolean(anchorEl);
 
   const [{ isDragging }, drag, preview] = useDrag({
     type: 'element',
@@ -145,6 +365,7 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
     collect: (monitor) => ({
       isDragging: !!monitor.isDragging(),
     }),
+    canDrag: () => !isSettingsOpen, // Disable drag when settings are open
     end: (_, monitor) => {
       if (!monitor.didDrop()) {
         setCurrentPosition({ x, y }); // Reset if not dropped
@@ -257,7 +478,7 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
 
   // Handle arrow key navigation for pixel-by-pixel movement
   useEffect(() => {
-    if (!isSelected || isEditing) return;
+    if (!isSelected || isEditing || isSettingsOpen) return; // Disable keyboard navigation when settings are open
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!elementRef.current?.parentElement) return;
@@ -417,18 +638,21 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
     if (type === 'text' || type === 'title') {
       e.stopPropagation();
       setIsEditing(true);
-    } else if (type === 'image' || type === 'chart') {
+    } else if (type === 'image') {
+      setShowMediaUploader(true);
+    } else if (type === 'chart') {
       setShowMediaUploader(true);
     }
   };
 
-  const handleContentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setEditContent(e.target.value);
+  const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newContent = e.target.value;
+    setEditContent(newContent);
   };
 
   const handleContentBlur = () => {
     setIsEditing(false);
-    if (editContent !== content) {
+    if (typeof editContent === 'string') {
       onContentChange(id, editContent);
     }
   };
@@ -437,9 +661,6 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleContentBlur();
-    } else if (e.key === 'Escape') {
-      setIsEditing(false);
-      setEditContent(content); // Reset to original content
     }
   };
 
@@ -483,7 +704,7 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
     handleStyleChange({ fontStyle: newStyle === 'italic' ? 'italic' : 'normal' });
   };
 
-  const handleMediaComplete = (newContent: string | ChartData) => {
+  const handleMediaComplete = (newContent: string | ChartConfiguration) => {
     setShowMediaUploader(false);
     onContentChange(id, typeof newContent === 'string' ? newContent : JSON.stringify(newContent));
   };
@@ -554,6 +775,213 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
     };
   }, []);
 
+  const handleChartTypeChange = (newType: 'bar' | 'line' | 'pie' | 'doughnut') => {
+    setChartSettings(prev => ({
+      ...prev,
+      type: newType
+    }));
+    onContentChange(id, JSON.stringify({
+      ...chartSettings,
+      type: newType
+    }));
+  };
+
+  const handleChartDataChange = (index: number, field: string, value: string | number[]) => {
+    console.log('Chart data change:', { index, field, value, currentData: chartSettings.datasets[index] });
+    
+    const newSettings = { ...chartSettings };
+    if (field === 'label') {
+      newSettings.datasets[index].label = value as string;
+    } else if (field === 'data') {
+      try {
+        // Ensure we have a valid array of numbers
+        let dataArray: number[] = [];
+        
+        if (typeof value === 'string') {
+          // Handle comma-separated string input
+          dataArray = value
+            .split(',')
+            .map(num => parseFloat(num.trim()))
+            .filter(num => !isNaN(num));
+        } else if (Array.isArray(value)) {
+          // Handle direct array input
+          dataArray = value.filter(num => typeof num === 'number' && !isNaN(num));
+        }
+        
+        // Ensure we have a valid array before updating
+        if (Array.isArray(dataArray) && dataArray.length > 0) {
+          newSettings.datasets[index].data = dataArray;
+        } else {
+          console.error('Invalid data array:', dataArray);
+          // Keep the existing data if the new data is invalid
+          return;
+        }
+      } catch (error) {
+        console.error('Error processing chart data:', error);
+        // Keep the existing data if there's an error
+        return;
+      }
+    }
+    
+    // Update the chart settings and content
+    setChartSettings(newSettings);
+    onContentChange(id, JSON.stringify(newSettings));
+  };
+
+  const handleChartLabelChange = (labels: string[]) => {
+    const newSettings = { ...chartSettings, labels };
+    setChartSettings(newSettings);
+    onContentChange(id, JSON.stringify(newSettings));
+  };
+
+  const renderContent = () => {
+    if (type === 'text' || type === 'title') {
+      if (isEditing && typeof content === 'string') {
+        return (
+          <TextField
+            value={editContent}
+            onChange={handleTextChange}
+            onBlur={handleContentBlur}
+            onKeyDown={handleKeyDown}
+            multiline
+            fullWidth
+            autoFocus
+            variant="standard"
+            sx={{
+              width: '100%',
+              '& .MuiInputBase-root': {
+                fontSize: `${fontSize * displayScale}px`,
+                fontFamily,
+                fontWeight,
+                fontStyle,
+                textAlign,
+                padding: 0,
+                lineHeight: 1.2,
+                color: textColor || '#000000',
+                '&:before, &:after': {
+                  display: 'none'
+                }
+              },
+              '& .MuiInputBase-input': {
+                padding: 0,
+                lineHeight: 1.2,
+                textAlign,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                color: textColor || '#000000'
+              }
+            }}
+          />
+        );
+      }
+
+      if (typeof content === 'string') {
+        return (
+          <Typography
+            variant={type === 'title' ? 'h5' : 'body1'}
+            component="div"
+            style={{
+              width: '100%',
+              height: '100%',
+              overflow: 'hidden',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              fontSize: `${fontSize * displayScale}px`,
+              fontFamily,
+              fontWeight,
+              fontStyle,
+              textAlign,
+              color: textColor || '#000000',
+              lineHeight: 1.2
+            }}
+          >
+            {content}
+          </Typography>
+        );
+      }
+    }
+
+    if (type === 'image' && content) {
+      return (
+        <Box
+          sx={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            '& img': {
+              maxWidth: '100%',
+              maxHeight: '100%',
+              objectFit: 'contain'
+            }
+          }}
+        >
+          <img 
+            src={typeof content === 'string' ? content : ''} 
+            alt="Uploaded content"
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'contain'
+            }}
+          />
+        </Box>
+      );
+    }
+
+    if (type === 'chart') {
+      try {
+        return (
+          <ChartWrapper 
+            content={content} 
+            onContentChange={(newContent) => onContentChange(id, newContent)} 
+          />
+        );
+      } catch (error) {
+        console.error('Error rendering chart:', error);
+        return (
+          <Typography variant="body2" color="error">
+            Error rendering chart
+          </Typography>
+        );
+      }
+    }
+
+    if (type === 'card') {
+      return (
+        <Box
+          sx={{
+            width: '100%',
+            height: '100%',
+            backgroundColor: backgroundColor || 'white',
+            borderRadius: borderRadius ? `${borderRadius}px` : 0,
+            boxShadow: shadow ? '0 4px 8px rgba(0,0,0,0.1)' : 'none',
+            padding: padding ? `${padding}px` : 0,
+            border: borderWidth > 0 ? `${borderWidth}px ${borderStyle} ${borderColor}` : 'none',
+            boxSizing: 'border-box'
+          }}
+        />
+      );
+    }
+
+    if (type === 'divider') {
+      return (
+        <Box
+          sx={{
+            width: '100%',
+            height: '100%',
+            backgroundColor: borderColor || '#000000',
+            border: 'none'
+          }}
+        />
+      );
+    }
+
+    return null;
+  };
+
   return (
     <Box
       ref={elementRef}
@@ -566,9 +994,9 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
         left: `${currentPosition.x * displayScale}px`,
         top: `${currentPosition.y * displayScale}px`,
         width: `${width * displayScale}px`,
-        minWidth: `${getMinWidth() * displayScale}px`,
+        minWidth: `${(getMinWidth?.() ?? 100) * displayScale}px`,
         height: `${height * displayScale}px`,
-        minHeight: `${getHeightPerLine() * displayScale}px`,
+        minHeight: `${(getHeightPerLine?.() ?? 20) * displayScale}px`,
         opacity: isDragging ? 0.5 : 1,
         cursor: 'move',
         border: borderWidth > 0 ? `${borderWidth}px ${borderStyle} ${borderColor}` : 'none',
@@ -623,242 +1051,7 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
         boxSizing: 'border-box',
         position: 'relative'
       }}>
-        {type === 'text' && (
-          isEditing ? (
-            <TextField
-              value={editContent}
-              onChange={handleContentChange}
-              onBlur={handleContentBlur}
-              onKeyDown={handleKeyDown}
-              multiline
-              fullWidth
-              autoFocus
-              variant="standard"
-              sx={{
-                width: '100%',
-                '& .MuiInputBase-root': {
-                  fontSize: `${fontSize * displayScale}px`,
-                  fontFamily,
-                  fontWeight,
-                  fontStyle,
-                  textAlign,
-                  padding: 0,
-                  lineHeight: 1.2,
-                  color: textColor || '#000000',
-                  '&:before, &:after': {
-                    display: 'none'
-                  }
-                },
-                '& .MuiInputBase-input': {
-                  padding: 0,
-                  lineHeight: 1.2,
-                  textAlign,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  overflowWrap: 'break-word',
-                  color: textColor || '#000000'
-                }
-              }}
-            />
-          ) : (
-            <Box sx={{
-              width: '100%',
-              textAlign,
-              padding: 0,
-              margin: 0
-            }}>
-              <Typography
-                sx={{
-                  fontSize: `${fontSize * displayScale}px`,
-                  fontFamily,
-                  fontWeight,
-                  fontStyle,
-                  padding: 0,
-                  margin: 0,
-                  lineHeight: 1.2,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  overflowWrap: 'break-word',
-                  color: textColor || '#000000',
-                  display: 'inline-block',
-                  maxWidth: '100%'
-                }}
-              >
-                {content}
-              </Typography>
-            </Box>
-          )
-        )}
-        {type === 'title' && (
-          isEditing ? (
-            <TextField
-              value={editContent}
-              onChange={handleContentChange}
-              onBlur={handleContentBlur}
-              onKeyDown={handleKeyDown}
-              multiline
-              fullWidth
-              autoFocus
-              variant="standard"
-              sx={{
-                '& .MuiInputBase-root': {
-                  fontSize: `${fontSize * displayScale}px`,
-                  fontFamily,
-                  fontWeight,
-                  fontStyle,
-                  textAlign,
-                  padding: 0,
-                  color: textColor || '#000000',
-                  '&:before, &:after': {
-                    display: 'none'
-                  }
-                },
-                '& .MuiInputBase-input': {
-                  padding: 0,
-                  lineHeight: 1.5,
-                  textAlign,
-                  color: textColor || '#000000'
-                }
-              }}
-            />
-          ) : (
-            <Typography
-              variant="h6"
-              sx={{
-                fontSize: `${fontSize * displayScale}px`,
-                fontFamily,
-                fontWeight,
-                fontStyle,
-                textAlign,
-                width: '100%',
-                padding: 0,
-                margin: 0,
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-                overflowWrap: 'break-word',
-                display: 'block',
-                color: textColor || '#000000'
-              }}
-            >
-              {content}
-            </Typography>
-          )
-        )}
-        {type === 'divider' && (
-          <Box
-            sx={{
-              width: '100%',
-              height: `${height}px`,
-              backgroundColor: borderColor || '#000000',
-              borderStyle: borderStyle || 'solid',
-              borderWidth: `${borderWidth}px`,
-              transform: `scaleY(${displayScale})`,
-              margin: 'auto'
-            }}
-          />
-        )}
-        {type === 'image' && (
-          content ? (
-            <img 
-              src={content} 
-              alt="Draggable" 
-              style={{ 
-                maxWidth: '100%', 
-                maxHeight: '100%', 
-                objectFit: 'contain' 
-              }} 
-            />
-          ) : (
-            <Box
-              sx={{
-                width: '100%',
-                height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: '2px dashed #ccc',
-                borderRadius: 1,
-                backgroundColor: '#f5f5f5',
-                cursor: 'pointer',
-              }}
-              onClick={() => setShowMediaUploader(true)}
-            >
-              <Typography>Click to upload image</Typography>
-            </Box>
-          )
-        )}
-        {type === 'chart' && (
-          content ? (
-            <Box sx={{ width: '100%', height: '100%' }}>
-              {(() => {
-                try {
-                  const chartData = JSON.parse(content);
-                  const chartProps = {
-                    data: chartData,
-                    options: {
-                      responsive: true,
-                      maintainAspectRatio: true,
-                      plugins: {
-                        legend: {
-                          display: true,
-                          position: 'bottom' as const
-                        }
-                      }
-                    }
-                  };
-
-                  switch (chartData.datasets[0].type) {
-                    case 'line':
-                      return <Line {...chartProps} />;
-                    case 'bar':
-                      return <Bar {...chartProps} />;
-                    case 'pie':
-                      return <Pie {...chartProps} />;
-                    default:
-                      return <Bar {...chartProps} />;
-                  }
-                } catch (error) {
-                  console.error('Error rendering chart:', error);
-                  return (
-                    <Box
-                      sx={{
-                        width: '100%',
-                        height: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        border: '2px dashed #ccc',
-                        borderRadius: 1,
-                        backgroundColor: '#f5f5f5',
-                        cursor: 'pointer',
-                      }}
-                      onClick={() => setShowMediaUploader(true)}
-                    >
-                      <Typography>Click to configure chart</Typography>
-                    </Box>
-                  );
-                }
-              })()}
-            </Box>
-          ) : (
-            <Box
-              sx={{
-                width: '100%',
-                height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: '2px dashed #ccc',
-                borderRadius: 1,
-                backgroundColor: '#f5f5f5',
-                cursor: 'pointer',
-              }}
-              onClick={() => setShowMediaUploader(true)}
-            >
-              <Typography>Click to configure chart</Typography>
-            </Box>
-          )
-        )}
+        {renderContent()}
       </Box>
 
       {isSelected && (
@@ -997,6 +1190,8 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
           vertical: 'top',
           horizontal: 'right',
         }}
+        disablePortal
+        container={elementRef.current}
         slotProps={{
           paper: {
             sx: {
@@ -1006,17 +1201,22 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
               overflow: 'visible',
               borderRadius: 1,
               boxShadow: 3,
-              zIndex: zIndex + 3,
-              position: 'absolute',
+              mt: 1,
+              position: 'fixed',
               top: 'auto',
-              left: 'auto'
+              left: 'auto',
+              transform: 'none'
             }
           }
         }}
-        disablePortal={true}
-        keepMounted={false}
+        sx={{
+          position: 'fixed',
+          top: 'auto',
+          left: 'auto',
+          transform: 'none'
+        }}
       >
-        <Box sx={{ p: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           {(type === 'text' || type === 'title') && (
             <>
               <FormControl size="small">
@@ -1101,11 +1301,9 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                 <Typography variant="caption">Text Color</Typography>
-                <input
-                  type="color"
-                  value={textColor || '#000000'}
-                  onChange={(e) => handleStyleChange({ textColor: e.target.value })}
-                  style={{ width: '100%' }}
+                <ColorPicker
+                  color={textColor || '#000000'}
+                  onChange={(color) => handleStyleChange({ textColor: color })}
                 />
               </Box>
             </>
@@ -1128,11 +1326,9 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                 <Typography variant="caption">Border Color</Typography>
-                <input
-                  type="color"
-                  value={borderColor}
-                  onChange={(e) => handleStyleChange({ borderColor: e.target.value })}
-                  style={{ width: '100%' }}
+                <ColorPicker
+                  color={borderColor}
+                  onChange={(color) => handleStyleChange({ borderColor: color })}
                 />
               </Box>
 
@@ -1169,11 +1365,9 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
                 <>
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                     <Typography variant="caption">Background Color</Typography>
-                    <input
-                      type="color"
-                      value={backgroundColor}
-                      onChange={(e) => handleStyleChange({ backgroundColor: e.target.value })}
-                      style={{ width: '100%' }}
+                    <ColorPicker
+                      color={backgroundColor}
+                      onChange={(color) => handleStyleChange({ backgroundColor: color })}
                     />
                   </Box>
 
@@ -1214,6 +1408,85 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
                   />
                 </>
               )}
+            </>
+          )}
+          
+          {type === 'chart' && (
+            <>
+              <FormControl size="small">
+                <InputLabel>Chart Type</InputLabel>
+                <Select
+                  value={chartSettings.type}
+                  onChange={(e) => handleChartTypeChange(e.target.value as 'bar' | 'line' | 'pie' | 'doughnut')}
+                  label="Chart Type"
+                >
+                  <MenuItem value="bar">Bar</MenuItem>
+                  <MenuItem value="line">Line</MenuItem>
+                  <MenuItem value="pie">Pie</MenuItem>
+                  <MenuItem value="doughnut">Doughnut</MenuItem>
+                </Select>
+              </FormControl>
+
+              <TextField
+                size="small"
+                label="Labels (comma separated)"
+                value={chartSettings.labels.join(', ')}
+                onChange={(e) => handleChartLabelChange(e.target.value.split(',').map(label => label.trim()))}
+                fullWidth
+              />
+
+              {chartSettings.datasets.map((dataset, index) => {
+                // Ensure we have valid data before rendering
+                const dataValue = Array.isArray(dataset.data) 
+                  ? dataset.data.join(', ') 
+                  : typeof dataset.data === 'string'
+                    ? dataset.data
+                    : '';
+                    
+                return (
+                  <Box key={index} sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <Typography variant="caption">Dataset {index + 1}</Typography>
+                    <TextField
+                      size="small"
+                      label="Label"
+                      value={dataset.label || ''}
+                      onChange={(e) => handleChartDataChange(index, 'label', e.target.value)}
+                      fullWidth
+                    />
+                    <TextField
+                      size="small"
+                      label="Data (comma separated numbers)"
+                      value={dataValue}
+                      onChange={(e) => handleChartDataChange(index, 'data', e.target.value)}
+                      fullWidth
+                    />
+                  </Box>
+                );
+              })}
+
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => {
+                  const newSettings = {
+                    ...chartSettings,
+                    datasets: [
+                      ...chartSettings.datasets,
+                      {
+                        label: `Dataset ${chartSettings.datasets.length + 1}`,
+                        data: chartSettings.labels.map(() => 0),
+                        backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                      }
+                    ]
+                  };
+                  setChartSettings(newSettings);
+                  onContentChange(id, JSON.stringify(newSettings));
+                }}
+              >
+                Add Dataset
+              </Button>
             </>
           )}
           

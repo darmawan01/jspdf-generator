@@ -1,11 +1,13 @@
-import PreviewIcon from '@mui/icons-material/Preview';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import PreviewIcon from '@mui/icons-material/Preview';
 import { Box, Button, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Snackbar, TextareaAutosize, Typography } from '@mui/material';
-import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import ChartJS from 'chart.js/auto';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDrop } from 'react-dnd';
 import PdfWrapper from '../components/PDFWrapper';
 import { elementTemplates } from '../constants/templates';
 import { usePDFContext } from '../hooks/usePdf';
+import { ContentType } from '../types/pdf';
 import DraggableElement from './DraggableElement';
 
 // Grid configuration
@@ -99,7 +101,7 @@ const PDFEditor: React.FC = () => {
     const targetHeight = containerHeight * 0.8;
 
     const aspectRatio = paperDimensions.width / paperDimensions.height;
-    
+
     if (targetWidth / aspectRatio <= targetHeight) {
       // Width limited
       return {
@@ -246,15 +248,15 @@ const PDFEditor: React.FC = () => {
       const template = Object.values(elementTemplates).find(
         t => t.type === item.type && t.content === item.content
       );
-      
+
       // Convert template dimensions to PDF points
       const elementWidth = (template?.minWidth || 300) / displayDimensions.scale;
       const elementHeight = (template?.heightPerLine || 100) / displayDimensions.scale;
-      
+
       // Calculate maximum allowed positions to keep element within bounds
       const maxX = paperDimensions.width - elementWidth;
       const maxY = paperDimensions.height - elementHeight;
-      
+
       // Ensure coordinates are within bounds considering element dimensions
       const boundedX = Math.max(0, Math.min(pdfCoords.x, maxX));
       const boundedY = Math.max(0, Math.min(pdfCoords.y, maxY));
@@ -300,7 +302,7 @@ const PDFEditor: React.FC = () => {
 
       const dragPreview = monitor.getSourceClientOffset();
       if (!dragPreview) return;
-      
+
       const paperRect = paperRef.current.getBoundingClientRect();
       const relativeX = dragPreview.x - paperRect.left;
       const relativeY = dragPreview.y - paperRect.top;
@@ -315,7 +317,7 @@ const PDFEditor: React.FC = () => {
       // Calculate maximum allowed positions
       const maxX = paperDimensions.width - element.width;
       const maxY = paperDimensions.height - element.height;
-      
+
       // Ensure coordinates are within bounds considering element dimensions
       const boundedX = Math.max(0, Math.min(pdfCoords.x, maxX));
       const boundedY = Math.max(0, Math.min(pdfCoords.y, maxY));
@@ -327,7 +329,7 @@ const PDFEditor: React.FC = () => {
   const handleExportPDF = () => {
     // Get the actual paper dimensions in points
     const basePaperDimensions = PAPER_SIZES[paperSize as keyof typeof PAPER_SIZES];
-    
+
     // Calculate PDF dimensions based on orientation
     const pdfWidth = orientation === 'landscape' ? basePaperDimensions.height : basePaperDimensions.width;
     const pdfHeight = orientation === 'landscape' ? basePaperDimensions.width : basePaperDimensions.height;
@@ -377,10 +379,12 @@ const PDFEditor: React.FC = () => {
           // Set up text properties before measuring
           pdfInstance.setFont(mapFontToPDF(element.fontFamily || 'Arial'));
           pdfInstance.setFontSize(element.fontSize || 16);
-          
+
           // Get text width for alignment calculations
-          const textWidth = pdfInstance.getTextWidth(element.content);
-          
+          const textWidth = typeof element.content === 'string'
+            ? pdfInstance.getTextWidth(element.content)
+            : 0;
+
           // Calculate baseline offset for text
           const baselineOffset = (element.fontSize || 16) * 0.75;
 
@@ -402,16 +406,18 @@ const PDFEditor: React.FC = () => {
           }
 
           // Print the text
-          pdf.printText(element.content, {
-            x: textX,
-            y: textY,
-            fontName: mapFontToPDF(element.fontFamily || 'Arial'),
-            fontSize: element.fontSize || 16,
-            fontStyle: element.fontStyle || 'normal',
-            fontWeight: element.fontWeight || 'normal',
-            align: 'left', // We handle alignment manually through x position
-            color: element.textColor || '#000000'
-          });
+          if (typeof element.content === 'string') {
+            pdf.printText(element.content, {
+              x: textX,
+              y: textY,
+              fontName: mapFontToPDF(element.fontFamily || 'Arial'),
+              fontSize: element.fontSize || 16,
+              fontStyle: element.fontStyle || 'normal',
+              fontWeight: element.fontWeight || 'normal',
+              align: 'left', // We handle alignment manually through x position
+              color: element.textColor || '#000000'
+            });
+          }
         });
       } else if (element.type === 'card') {
         return Promise.resolve(() => {
@@ -456,21 +462,91 @@ const PDFEditor: React.FC = () => {
             );
           }
         });
-      } else if (element.type === 'chart' || element.type === 'image') {
+      } else if (element.type === 'chart') {
+        return new Promise((resolve) => {
+          // Create a canvas element
+          const canvas = document.createElement('canvas');
+          // Use the actual PDF dimensions instead of scaled dimensions
+          canvas.width = element.width;
+          canvas.height = element.height;
+          const ctx = canvas.getContext('2d');
+
+          if (!ctx) {
+            console.error('Could not get canvas context');
+            resolve(() => { });
+            return;
+          }
+
+          try {
+            // Parse the chart content
+            const chartConfig = typeof element.content === 'string' 
+              ? JSON.parse(element.content) 
+              : element.content;
+
+            // Create a new chart instance with proper configuration
+            const chart = new ChartJS(ctx, {
+              type: chartConfig.type,
+              data: {
+                labels: chartConfig.data.labels,
+                datasets: chartConfig.data.datasets.map((dataset: { label: string; data: number[]; backgroundColor?: string; borderColor?: string; borderWidth?: number }) => ({
+                  label: dataset.label,
+                  data: dataset.data,
+                  backgroundColor: dataset.backgroundColor || 'rgba(54, 162, 235, 0.5)',
+                  borderColor: dataset.borderColor || 'rgba(54, 162, 235, 1)',
+                  borderWidth: dataset.borderWidth || 1
+                }))
+              },
+              options: {
+                ...chartConfig.options,
+                responsive: false,
+                maintainAspectRatio: false,
+                animation: {
+                  duration: 0 // Disable animations for PDF export
+                }
+              }
+            });
+
+            // Wait for the chart to render
+            setTimeout(() => {
+              try {
+                // Convert the chart to an image and add it to the PDF
+                const imageData = canvas.toDataURL('image/png');
+                pdf.addImage(imageData, {
+                  x: element.position.x * scaleX,
+                  y: element.position.y * scaleY,
+                  w: element.width * scaleX,
+                  h: element.height * scaleY
+                });
+              } catch (error) {
+                console.error('Error converting chart to image:', error);
+              }
+
+              // Clean up
+              chart.destroy();
+              resolve(() => { });
+            }, 100);
+          } catch (error) {
+            console.error('Error creating chart:', error);
+            resolve(() => { });
+          }
+        });
+      } else if (element.type === 'image') {
         return Promise.resolve(() => {
-          pdf.addImage(element.content, {
-            x: element.position.x * scaleX,
-            y: element.position.y * scaleY,
-            w: element.width * scaleX,
-            h: element.height * scaleY
-          });
+          if (typeof element.content === 'string') {
+            pdf.addImage(element.content, {
+              x: element.position.x * scaleX,
+              y: element.position.y * scaleY,
+              w: element.width * scaleX,
+              h: element.height * scaleY
+            });
+          }
         });
       } else if (element.type === 'divider') {
         return Promise.resolve(() => {
           pdfInstance.setDrawColor(element.borderColor || '#000000');
           pdfInstance.setFillColor(element.borderColor || '#000000');
           pdfInstance.setLineWidth(element.height * scaleY);
-          
+
           pdf.rect(
             element.position.x * scaleX,
             element.position.y * scaleY,
@@ -480,11 +556,11 @@ const PDFEditor: React.FC = () => {
           );
         });
       }
-      return Promise.resolve(() => {});
+      return Promise.resolve(() => { });
     });
 
-    Promise.all(chartPromises).then(drawFunctions => {
-      drawFunctions.forEach(draw => draw());
+    Promise.all(chartPromises).then((drawFunctions) => {
+      (drawFunctions as (() => void)[]).forEach(draw => draw());
       const pdfBlob = pdf.toBlob();
       const blobUrl = URL.createObjectURL(pdfBlob);
       window.open(blobUrl, '_blank');
@@ -494,8 +570,12 @@ const PDFEditor: React.FC = () => {
     });
   };
 
-  const handleContentChange = (id: string, content: string) => {
-    updateElementStyle(id, { content });
+  const handleContentChange = (id: string, content: ContentType) => {
+    if (typeof content === 'string') {
+      updateElementStyle(id, { content });
+    } else {
+      updateElementStyle(id, { content: JSON.stringify(content) });
+    }
   };
 
   const handleCopyCode = () => {
@@ -616,29 +696,27 @@ const PDFEditor: React.FC = () => {
               }}
             />
             {elements.map((element) => (
-              typeof element.content === 'string' && (
-                <DraggableElement
-                  key={element.id}
-                  {...element}
-                  x={element.position.x}
-                  y={element.position.y}
-                  backgroundColor={element.backgroundColor || 'transparent'}
-                  borderStyle={element.borderStyle || 'solid'}
-                  borderColor={element.borderColor || '#000000'}
-                  borderWidth={element.borderWidth || 1}
-                  onResize={resizeElement}
-                  onStyleChange={updateElementStyle}
-                  onPositionChange={moveElement}
-                  onContentChange={handleContentChange}
-                  onDelete={deleteElement}
-                  bringForward={bringForward}
-                  sendBackward={sendBackward}
-                  bringToFront={bringToFront}
-                  sendToBack={sendToBack}
-                  paperDimensions={paperDimensions}
-                  displayScale={displayDimensions.scale}
-                />
-              )
+              <DraggableElement
+                key={element.id}
+                {...element}
+                x={element.position.x}
+                y={element.position.y}
+                backgroundColor={element.backgroundColor || 'transparent'}
+                borderStyle={element.borderStyle || 'solid'}
+                borderColor={element.borderColor || '#000000'}
+                borderWidth={element.borderWidth || 1}
+                onResize={resizeElement}
+                onStyleChange={updateElementStyle}
+                onPositionChange={moveElement}
+                onContentChange={handleContentChange}
+                onDelete={deleteElement}
+                bringForward={bringForward}
+                sendBackward={sendBackward}
+                bringToFront={bringToFront}
+                sendToBack={sendToBack}
+                paperDimensions={paperDimensions}
+                displayScale={displayDimensions.scale}
+              />
             ))}
           </Paper>
         </Box>
@@ -660,10 +738,10 @@ const PDFEditor: React.FC = () => {
             borderBottom: '1px solid #eee'
           }}>
             <Typography variant="h6">Generated Code</Typography>
-            <IconButton 
+            <IconButton
               onClick={handleCopyCode}
               size="small"
-              sx={{ 
+              sx={{
                 color: '#2196F3',
                 '&:hover': {
                   backgroundColor: 'rgba(33, 150, 243, 0.04)'
@@ -673,7 +751,7 @@ const PDFEditor: React.FC = () => {
               <ContentCopyIcon />
             </IconButton>
           </Box>
-          <Box sx={{ 
+          <Box sx={{
             flex: 1,
             overflow: 'auto',
             p: 2,

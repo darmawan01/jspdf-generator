@@ -1,191 +1,97 @@
-import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputLabel, MenuItem, Select, TextField } from '@mui/material';
-import { ChartData } from 'chart.js';
-import 'chart.js/auto';
 import React, { useState } from 'react';
-import { Bar, Line, Pie } from 'react-chartjs-2';
+import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Tab, Tabs } from '@mui/material';
+import { ChartConfiguration } from 'chart.js';
 
 interface MediaUploaderProps {
   type: 'image' | 'chart';
-  onComplete: (content: string | ChartData) => void;
+  onComplete: (content: string | ChartConfiguration) => void;
   onCancel: () => void;
 }
 
-interface ChartDataPoint {
-  x: string;
-  y: number;
-}
-
 const MediaUploader: React.FC<MediaUploaderProps> = ({ type, onComplete, onCancel }) => {
-  const [imagePreview, setImagePreview] = useState<string>('');
-  const [chartType, setChartType] = useState<'line' | 'bar' | 'pie'>('line');
-  const [chartData, setChartData] = useState<ChartDataPoint[]>([
-    { x: '', y: 0 },
-    { x: '', y: 0 },
-    { x: '', y: 0 }
-  ]);
+  const [tab, setTab] = useState(0);
+  const [imageUrl, setImageUrl] = useState('');
+  const [chartConfig, setChartConfig] = useState<ChartConfiguration | null>(null);
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTabChange = (_: React.SyntheticEvent, newValue: number) => {
+    setTab(newValue);
+  };
+
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string);
+      reader.onload = (e) => {
+        setImageUrl(e.target?.result as string);
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const handleChartDataChange = (index: number, field: 'x' | 'y', value: string) => {
-    const newData = [...chartData];
-    newData[index] = {
-      ...newData[index],
-      [field]: field === 'y' ? Number(value) : value
-    };
-    setChartData(newData);
-  };
-
-  const addDataPoint = () => {
-    setChartData([...chartData, { x: '', y: 0 }]);
-  };
-
-  const removeDataPoint = (index: number) => {
-    if (chartData.length > 2) {
-      const newData = chartData.filter((_, i) => i !== index);
-      setChartData(newData);
+  const handleChartConfigChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    try {
+      const config = JSON.parse(event.target.value);
+      setChartConfig(config);
+    } catch (error) {
+      console.error('Invalid chart configuration:', error);
     }
   };
 
   const handleComplete = () => {
-    if (type === 'image' && imagePreview) {
-      onComplete(imagePreview);
-    } else if (type === 'chart') {
-      const chartDataConfig: ChartData = {
-        labels: chartData.map(point => point.x),
-        datasets: [{
-          label: 'Data',
-          data: chartData.map(point => point.y),
-          backgroundColor: [
-            'rgba(255, 99, 132, 0.5)',
-            'rgba(54, 162, 235, 0.5)',
-            'rgba(255, 206, 86, 0.5)',
-            'rgba(75, 192, 192, 0.5)',
-          ],
-          borderColor: [
-            'rgba(255, 99, 132, 1)',
-            'rgba(54, 162, 235, 1)',
-            'rgba(255, 206, 86, 1)',
-            'rgba(75, 192, 192, 1)',
-          ],
-          borderWidth: 1
-        }]
-      };
-      onComplete(chartDataConfig);
-    }
-  };
-
-  const renderChartPreview = () => {
-    const chartProps = {
-      data: {
-        labels: chartData.map(point => point.x),
-        datasets: [{
-          label: 'Preview',
-          data: chartData.map(point => point.y),
-          backgroundColor: 'rgba(54, 162, 235, 0.5)',
-          borderColor: 'rgba(54, 162, 235, 1)',
-          borderWidth: 1
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false
-      }
-    };
-
-    switch (chartType) {
-      case 'line':
-        return <Line {...chartProps} />;
-      case 'bar':
-        return <Bar {...chartProps} />;
-      case 'pie':
-        return <Pie {...chartProps} />;
+    if (type === 'image' && imageUrl) {
+      onComplete(imageUrl);
+    } else if (type === 'chart' && chartConfig) {
+      onComplete(chartConfig);
     }
   };
 
   return (
-    <Dialog open={true} onClose={onCancel} maxWidth="md" fullWidth>
+    <Dialog open onClose={onCancel} maxWidth="md" fullWidth>
       <DialogTitle>
         {type === 'image' ? 'Upload Image' : 'Configure Chart'}
       </DialogTitle>
       <DialogContent>
         {type === 'image' ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, my: 2 }}>
-            <Button variant="contained" component="label">
-              Choose Image
-              <input
-                type="file"
-                hidden
-                accept="image/*"
-                onChange={handleFileChange}
-              />
-            </Button>
-            {imagePreview && (
-              <Box sx={{ mt: 2, maxHeight: 300, overflow: 'hidden' }}>
+          <Box sx={{ p: 2 }}>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleImageUpload}
+              style={{ marginBottom: '16px' }}
+            />
+            {imageUrl && (
+              <Box sx={{ mt: 2 }}>
                 <img
-                  src={imagePreview}
+                  src={imageUrl}
                   alt="Preview"
-                  style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                  style={{ maxWidth: '100%', maxHeight: '300px' }}
                 />
               </Box>
             )}
           </Box>
         ) : (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, my: 2 }}>
-            <FormControl fullWidth>
-              <InputLabel>Chart Type</InputLabel>
-              <Select
-                value={chartType}
-                onChange={(e) => setChartType(e.target.value as 'line' | 'bar' | 'pie')}
-                label="Chart Type"
-              >
-                <MenuItem value="line">Line Chart</MenuItem>
-                <MenuItem value="bar">Bar Chart</MenuItem>
-                <MenuItem value="pie">Pie Chart</MenuItem>
-              </Select>
-            </FormControl>
-
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {chartData.map((point, index) => (
-                <Box key={index} sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                  <TextField
-                    label="Label"
-                    value={point.x}
-                    onChange={(e) => handleChartDataChange(index, 'x', e.target.value)}
-                    size="small"
-                  />
-                  <TextField
-                    label="Value"
-                    type="number"
-                    value={point.y}
-                    onChange={(e) => handleChartDataChange(index, 'y', e.target.value)}
-                    size="small"
-                  />
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    onClick={() => removeDataPoint(index)}
-                    disabled={chartData.length <= 2}
-                  >
-                    Remove
-                  </Button>
+          <Box sx={{ p: 2 }}>
+            <Tabs value={tab} onChange={handleTabChange}>
+              <Tab label="JSON Configuration" />
+              <Tab label="Chart Preview" />
+            </Tabs>
+            <Box sx={{ mt: 2 }}>
+              {tab === 0 ? (
+                <textarea
+                  style={{
+                    width: '100%',
+                    minHeight: '200px',
+                    fontFamily: 'monospace',
+                    padding: '8px'
+                  }}
+                  placeholder="Paste chart configuration JSON here..."
+                  onChange={handleChartConfigChange}
+                />
+              ) : (
+                <Box sx={{ height: '300px' }}>
+                  {/* Add chart preview here */}
                 </Box>
-              ))}
-              <Button variant="outlined" onClick={addDataPoint}>
-                Add Data Point
-              </Button>
-            </Box>
-
-            <Box sx={{ height: 300, mt: 2 }}>
-              {renderChartPreview()}
+              )}
             </Box>
           </Box>
         )}
@@ -195,9 +101,9 @@ const MediaUploader: React.FC<MediaUploaderProps> = ({ type, onComplete, onCance
         <Button
           onClick={handleComplete}
           variant="contained"
-          disabled={type === 'image' ? !imagePreview : false}
+          disabled={type === 'image' ? !imageUrl : !chartConfig}
         >
-          {type === 'image' ? 'Upload' : 'Create Chart'}
+          {type === 'image' ? 'Upload' : 'Apply'}
         </Button>
       </DialogActions>
     </Dialog>

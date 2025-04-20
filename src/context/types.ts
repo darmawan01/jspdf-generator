@@ -1,4 +1,5 @@
 import { createContext } from 'react';
+import { ContentType } from '../types/pdf';
 
 export const PDFContext = createContext<PDFContextType | undefined>(undefined);
 
@@ -10,7 +11,7 @@ export interface Position {
 export interface PDFElement {
   id: string;
   type: 'text' | 'title' | 'image' | 'chart' | 'divider' | 'card';
-  content: string;
+  content: ContentType;
   position: Position;
   width: number;
   height: number;

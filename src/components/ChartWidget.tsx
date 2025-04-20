@@ -1,30 +1,18 @@
-import React, { useRef, useEffect } from 'react';
-import { Box, Paper, Typography, Select, MenuItem, FormControl, InputLabel } from '@mui/material';
-import { Chart, registerables } from 'chart.js';
-import ChartDataLabels from 'chartjs-plugin-datalabels';
+import React, { useEffect, useRef } from 'react';
+import { Chart as ChartJS, ChartConfiguration, registerables } from 'chart.js';
+import { ChartContent } from '../types/chart';
 
-// Register Chart.js components
-Chart.register(...registerables);
-Chart.register(ChartDataLabels);
+ChartJS.register(...registerables);
 
 interface ChartWidgetProps {
-  type: 'bar' | 'line' | 'pie';
-  data: {
-    labels: string[];
-    datasets: {
-      data: number[];
-      backgroundColor?: string[];
-      borderColor?: string;
-    }[];
-  };
-  title?: string;
-  width?: number;
-  height?: number;
+  content: ChartContent;
+  width: number;
+  height: number;
 }
 
-const ChartWidget: React.FC<ChartWidgetProps> = ({ type, data, title, width = 300, height = 200 }) => {
+const ChartWidget: React.FC<ChartWidgetProps> = ({ content, width, height }) => {
   const chartRef = useRef<HTMLCanvasElement>(null);
-  const chartInstance = useRef<Chart | null>(null);
+  const chartInstance = useRef<ChartJS | null>(null);
 
   useEffect(() => {
     if (chartRef.current) {
@@ -33,47 +21,29 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ type, data, title, width = 30
         chartInstance.current.destroy();
       }
 
-      const ctx = chartRef.current.getContext('2d');
-      if (ctx) {
-        chartInstance.current = new Chart(ctx, {
-          type,
-          data,
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                display: type !== 'bar',
-                position: 'bottom' as const,
-              },
-              title: {
-                display: !!title,
-                text: title,
-                font: { size: 14 },
-                align: 'start' as const,
-                padding: { bottom: 20 }
-              },
-              datalabels: {
-                display: type === 'bar',
-                anchor: 'end' as const,
-                align: 'top' as const,
-                offset: 4,
-                font: { size: 11 },
-                formatter: (value: number) => value.toString()
-              }
-            },
-            scales: type === 'bar' ? {
-              y: {
-                beginAtZero: true,
-                ticks: { stepSize: 1 }
-              },
-              x: {
-                grid: { display: false }
-              }
-            } : undefined
-          }
-        });
-      }
+      // Convert our simplified data structure to Chart.js format
+      const chartData = {
+        labels: content.data[0].x,
+        datasets: content.data.map(dataset => ({
+          label: dataset.label,
+          data: dataset.y,
+          backgroundColor: Array.isArray(dataset.color) ? dataset.color : dataset.color,
+          borderColor: Array.isArray(dataset.color) ? dataset.color : dataset.color,
+          borderWidth: 1
+        }))
+      };
+
+      const config: ChartConfiguration = {
+        type: content.type as 'bar' | 'line' | 'pie' | 'doughnut',
+        data: chartData,
+        options: {
+          ...content.options,
+          responsive: true,
+          maintainAspectRatio: false
+        }
+      };
+
+      chartInstance.current = new ChartJS(chartRef.current, config);
     }
 
     return () => {
@@ -81,12 +51,12 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ type, data, title, width = 30
         chartInstance.current.destroy();
       }
     };
-  }, [type, data, title]);
+  }, [content]);
 
   return (
-    <Paper sx={{ p: 2, width, height }}>
-      <canvas ref={chartRef} width={width} height={height} />
-    </Paper>
+    <div style={{ width, height }}>
+      <canvas ref={chartRef} />
+    </div>
   );
 };
 
