@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { PDFContext, PDFElement } from './types';
 import { PAPER_SIZES } from '../constants/paper';
 
@@ -51,55 +51,90 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
       '// Add elements'
     ];
 
+    // Process each element
     sortedElements.forEach(element => {
       if (element.type === 'text' || element.type === 'title') {
         lines.push('');
         lines.push(`// Add ${element.type}`);
-        lines.push(`// Set up text properties`);
-        lines.push(`const pdfInstance_${element.id} = pdf.getPdfInstance();`);
-        lines.push(`pdfInstance_${element.id}.setFont('${mapFontToPDF(element.fontFamily || 'Arial')}');`);
-        lines.push(`pdfInstance_${element.id}.setFontSize(${element.fontSize || 16});`);
-        lines.push(`const textWidth_${element.id} = pdfInstance_${element.id}.getTextWidth('${element.content}');`);
-        lines.push(`const baselineOffset_${element.id} = ${element.fontSize || 16} * 0.75;`);
-        lines.push(`const padding_${element.id} = ${element.padding || 0};`);
-        lines.push(`const availableWidth_${element.id} = ${element.width} - (padding_${element.id} * 2);`);
-        lines.push('');
-        lines.push(`// Calculate text position`);
-        lines.push(`let textX_${element.id} = ${Math.round(element.position.x)} + padding_${element.id};`);
-        lines.push(`let textY_${element.id} = ${Math.round(element.position.y)} + baselineOffset_${element.id} + padding_${element.id};`);
-        lines.push('');
-        lines.push(`// Adjust position based on alignment`);
-        if (element.textAlign === 'center') {
-          lines.push(`textX_${element.id} += (availableWidth_${element.id} - textWidth_${element.id}) / 2;`);
-        } else if (element.textAlign === 'right') {
-          lines.push(`textX_${element.id} += availableWidth_${element.id} - textWidth_${element.id};`);
-        }
-        lines.push('');
-        lines.push(`// Print the text`);
+        lines.push(`pdfInstance.setFont('${mapFontToPDF(element.fontFamily || 'Arial')}');`);
+        lines.push(`pdfInstance.setFontSize(${element.fontSize || 16});`);
         lines.push(`pdf.printText('${element.content}', {`);
-        lines.push(`  x: textX_${element.id},`);
-        lines.push(`  y: textY_${element.id},`);
+        lines.push(`  x: ${Math.round(element.position.x)},`);
+        lines.push(`  y: ${Math.round(element.position.y)},`);
         lines.push(`  fontName: '${mapFontToPDF(element.fontFamily || 'Arial')}',`);
         lines.push(`  fontSize: ${element.fontSize || 16},`);
         lines.push(`  fontStyle: '${element.fontStyle || 'normal'}',`);
         lines.push(`  fontWeight: '${element.fontWeight || 'normal'}',`);
-        lines.push(`  align: 'left',`);
+        lines.push(`  align: '${element.textAlign || 'left'}',`);
         lines.push(`  color: '${element.textColor || '#000000'}'`);
         lines.push('});');
       } else if (element.type === 'chart') {
         lines.push('');
         lines.push('// Add chart');
+        lines.push('console.log("Starting chart render for PDF...");');
+        lines.push('');
+        lines.push('// Create and setup canvas');
         lines.push('const chartCanvas = document.createElement("canvas");');
+        lines.push('document.body.appendChild(chartCanvas);');
+        lines.push(`chartCanvas.style.width = "${Math.round(element.width)}px";`);
+        lines.push(`chartCanvas.style.height = "${Math.round(element.height)}px";`);
         lines.push(`chartCanvas.width = ${Math.round(element.width)};`);
         lines.push(`chartCanvas.height = ${Math.round(element.height)};`);
+        lines.push('');
         lines.push('const ctx = chartCanvas.getContext("2d");');
-        lines.push('// Add your chart data and options here');
-        lines.push(`pdf.addImage(chartCanvas.toDataURL(), {`);
-        lines.push(`  x: ${Math.round(element.position.x)},`);
-        lines.push(`  y: ${Math.round(element.position.y)},`);
-        lines.push(`  w: ${Math.round(element.width)},`);
-        lines.push(`  h: ${Math.round(element.height)}`);
-        lines.push('});');
+        lines.push('if (!ctx) {');
+        lines.push('  console.error("Failed to get canvas context");');
+        lines.push('  document.body.removeChild(chartCanvas);');
+        lines.push('  return;');
+        lines.push('}');
+        lines.push('');
+        lines.push('try {');
+        lines.push('  // Parse chart config');
+        lines.push(`  const chartConfig = ${element.content && typeof element.content === 'string' ? element.content : '{}'};`);
+        lines.push('  console.log("Chart config:", chartConfig);');
+        lines.push('');
+        lines.push('  // Create chart instance');
+        lines.push('  const chart = new ChartJS(ctx, {');
+        lines.push('    type: chartConfig.type,');
+        lines.push('    data: chartConfig.data,');
+        lines.push('    options: {');
+        lines.push('      ...chartConfig.options,');
+        lines.push('      responsive: false,');
+        lines.push('      animation: false,');
+        lines.push('      plugins: {');
+        lines.push('        legend: {');
+        lines.push('          display: true');
+        lines.push('        }');
+        lines.push('      }');
+        lines.push('    }');
+        lines.push('  });');
+        lines.push('');
+        lines.push('  // Force a synchronous render');
+        lines.push('  chart.draw();');
+        lines.push('');
+        lines.push('  // Get the image data');
+        lines.push('  const imageData = chartCanvas.toDataURL("image/png");');
+        lines.push('  console.log("Chart rendered, image data length:", imageData.length);');
+        lines.push('');
+        lines.push('  // Clean up');
+        lines.push('  chart.destroy();');
+        lines.push('  document.body.removeChild(chartCanvas);');
+        lines.push('');
+        lines.push('  // Add to PDF');
+        lines.push('  pdf.addImage(imageData, {');
+        lines.push(`    x: ${Math.round(element.position.x)},`);
+        lines.push(`    y: ${Math.round(element.position.y)},`);
+        lines.push(`    w: ${Math.round(element.width)},`);
+        lines.push(`    h: ${Math.round(element.height)}`);
+        lines.push('  });');
+        lines.push('');
+        lines.push('  console.log("Chart added to PDF");');
+        lines.push('} catch (error) {');
+        lines.push('  console.error("Error rendering chart:", error);');
+        lines.push('  if (chartCanvas.parentNode) {');
+        lines.push('    document.body.removeChild(chartCanvas);');
+        lines.push('  }');
+        lines.push('}');
       } else if (element.type === 'image') {
         lines.push('');
         lines.push('// Add image');
@@ -112,40 +147,14 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
       } else if (element.type === 'card') {
         lines.push('');
         lines.push('// Add card background');
-        lines.push(`const pdfInstance = pdf.getPdfInstance();`);
-        
-        // Set border color and width if border is enabled
-        if (element.borderWidth && element.borderWidth > 0) {
-          lines.push(`pdfInstance.setDrawColor('${element.borderColor || '#000000'}');`);
-          lines.push(`pdfInstance.setLineWidth(${element.borderWidth});`);
-        }
-
-        // If shadow is enabled, draw it first
-        if (element.shadow) {
-          lines.push(`// Draw shadow`);
-          lines.push(`pdfInstance.setFillColor(200, 200, 200);`);
-          lines.push(`pdf.roundedRect(${Math.round(element.position.x + 2)}, ${Math.round(element.position.y + 2)}, ${Math.round(element.width)}, ${Math.round(element.height)}, ${element.borderRadius || 0}, 'F');`);
-        }
-
-        // Draw the main rectangle with border radius if specified
-        lines.push(`// Draw main rectangle`);
         lines.push(`pdfInstance.setFillColor('${element.backgroundColor || '#ffffff'}');`);
-        if (element.borderRadius && element.borderRadius > 0) {
-          lines.push(`// Draw rounded rectangle with border radius`);
-          lines.push(`pdf.roundedRect(${Math.round(element.position.x)}, ${Math.round(element.position.y)}, ${Math.round(element.width)}, ${Math.round(element.height)}, ${element.borderRadius}, '${element.borderWidth && element.borderWidth > 0 ? 'FD' : 'F'}');`);
-        } else {
-          lines.push(`// Draw regular rectangle`);
-          lines.push(`pdf.rect(${Math.round(element.position.x)}, ${Math.round(element.position.y)}, ${Math.round(element.width)}, ${Math.round(element.height)}, '${element.borderWidth && element.borderWidth > 0 ? 'FD' : 'F'}');`);
-        }
+        lines.push(`pdf.roundedRect(${Math.round(element.position.x)}, ${Math.round(element.position.y)}, ${Math.round(element.width)}, ${Math.round(element.height)}, ${element.borderRadius || 0}, 'F');`);
       } else if (element.type === 'divider') {
         lines.push('');
         lines.push('// Add divider');
         lines.push(`pdfInstance.setDrawColor('${element.borderColor || '#000000'}');`);
-        lines.push(`pdfInstance.setFillColor('${element.borderColor || '#000000'}');`);
         lines.push(`pdfInstance.setLineWidth(${element.height || 1});`);
-        
-        // Draw the divider as a filled rectangle
-        lines.push(`pdf.rect(${Math.round(element.position.x)}, ${Math.round(element.position.y)}, ${Math.round(element.width)}, ${Math.round(element.height)}, 'F');`);
+        lines.push(`pdf.line(${Math.round(element.position.x)}, ${Math.round(element.position.y)}, ${Math.round(element.position.x + element.width)}, ${Math.round(element.position.y)});`);
       }
     });
 
@@ -172,7 +181,9 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
 
     setElements(prev => {
       const newElements = [...prev, newElement];
-      setGeneratedCode(generateCode());
+      // Generate code immediately with the new elements
+      const newCode = generateCode();
+      setGeneratedCode(newCode);
       return newElements;
     });
   }, [elements.length, generateCode]);
@@ -182,7 +193,9 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
       const newElements = prev.map(el =>
         el.id === id ? { ...el, position: { x: Math.max(0, x), y: Math.max(0, y) } } : el
       );
-      setGeneratedCode(generateCode());
+      // Generate code immediately with the updated elements
+      const newCode = generateCode();
+      setGeneratedCode(newCode);
       return newElements;
     });
   }, [generateCode]);
@@ -192,7 +205,9 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
       const newElements = prev.map(el =>
         el.id === id ? { ...el, width, height } : el
       );
-      setGeneratedCode(generateCode());
+      // Generate code immediately with the updated elements
+      const newCode = generateCode();
+      setGeneratedCode(newCode);
       return newElements;
     });
   }, [generateCode]);
@@ -202,7 +217,9 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
       const newElements = prev.map(el =>
         el.id === id ? { ...el, ...updates } : el
       );
-      setGeneratedCode(generateCode());
+      // Generate code immediately with the updated elements
+      const newCode = generateCode();
+      setGeneratedCode(newCode);
       return newElements;
     });
   }, [generateCode]);
@@ -210,7 +227,9 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
   const deleteElement = useCallback((id: string) => {
     setElements(prev => {
       const newElements = prev.filter(el => el.id !== id);
-      setGeneratedCode(generateCode());
+      // Generate code immediately with the updated elements
+      const newCode = generateCode();
+      setGeneratedCode(newCode);
       return newElements;
     });
   }, [generateCode]);
@@ -329,12 +348,10 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
         newElements.push(newElement);
       });
       
-      // Update elements and trigger code generation
+      // Update elements and generate code immediately
       setElements(newElements);
-      // Force a state update to ensure elements are set before generating code
-      setTimeout(() => {
-        setGeneratedCode(generateCode());
-      }, 1000);
+      const newCode = generateCode();
+      setGeneratedCode(newCode);
       
       return true;
     } catch (error) {
@@ -342,6 +359,12 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
       return false;
     }
   };
+
+  // Update code generation when paper size or orientation changes
+  useEffect(() => {
+    const newCode = generateCode();
+    setGeneratedCode(newCode);
+  }, [paperSize, orientation, generateCode]);
 
   const value = {
     elements,
