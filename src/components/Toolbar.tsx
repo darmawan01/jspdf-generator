@@ -111,11 +111,13 @@ const Toolbar: React.FC = () => {
     }}>
       <Typography variant="h6" sx={{ 
         mb: 1, 
-        fontSize: { xs: '1.1rem', sm: '1.2rem', md: '1.25rem' },
-        fontWeight: 500
+        fontSize: { xs: '1.1rem', sm: '1.2rem', md: '2rem' },
+        fontWeight: 800,
       }}>
         Widgets
       </Typography>
+
+      <Divider sx={{ my: 2 }} />
 
       {Object.entries(groupedTemplates).map(([group, templates], index) => (
         <React.Fragment key={group}>

@@ -299,6 +299,7 @@ const ChartWrapper: React.FC<ChartWrapperProps> = ({ content, onContentChange })
   // Only re-render when content changes
   const chartConfig = useMemo(() => 
     getChartConfig(content, onContentChange),
+
     [content] // Only depend on content changes
   );
 
@@ -416,15 +417,6 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
       const pdfX = Math.round(relativeX / currentZoom);
       const pdfY = Math.round(relativeY / currentZoom);
       
-      // Log occasionally for debugging
-      if (Math.random() < 0.01) {
-        console.log('DRAG - Mouse position:', { clientX: e.clientX, clientY: e.clientY });
-        console.log('DRAG - Paper rect:', paperRect);
-        console.log('DRAG - Relative position:', { relativeX, relativeY });
-        console.log('DRAG - Zoom:', currentZoom);
-        console.log('DRAG - PDF position:', { pdfX, pdfY });
-      }
-
       // Snap to grid if needed (convert grid size to PDF points)
       const gridSizeInPoints = GRID_SIZE / currentZoom;
       const snappedX = snapToGrid(pdfX / gridSizeInPoints) * gridSizeInPoints;
@@ -437,10 +429,6 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
       const boundedX = Math.max(0, Math.min(snappedX, maxX));
       const boundedY = Math.max(0, Math.min(snappedY, maxY));
 
-      if (Math.random() < 0.01) {
-        console.log('DRAG - Final position:', { boundedX, boundedY });
-      }
-
       // Store this position so we can use it when the drag ends
       const newPosition = { x: boundedX, y: boundedY };
       lastKnownPosition.current = newPosition;
@@ -452,7 +440,7 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
 
     document.addEventListener('mousemove', updatePosition);
     return () => document.removeEventListener('mousemove', updatePosition);
-  }, [isDragging, width, height, id, onPositionChange]);
+  }, [isDragging, width, height, id, onPositionChange, paperDimensions.width, paperDimensions.height]);
 
   // Update after drag ends
   useEffect(() => {
@@ -725,23 +713,31 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
       t => t.type === type && t.content === content
     );
     
+    let baseWidth = 100; // Default base width
+    
     if (template) {
-      return template.minWidth;
+      baseWidth = template.minWidth || baseWidth;
+    } else {
+      // Default values if no template matches
+      switch (type) {
+        case 'text':
+          baseWidth = 100;
+          break;
+        case 'title':
+          baseWidth = 200;
+          break;
+        case 'image':
+          baseWidth = 100;
+          break;
+        case 'chart':
+          baseWidth = 200;
+          break;
+        default:
+          baseWidth = 100;
+      }
     }
     
-    // Default values if no template matches
-    switch (type) {
-      case 'text':
-        return 100;
-      case 'title':
-        return 200;
-      case 'image':
-        return 100;
-      case 'chart':
-        return 200;
-      default:
-        return 100;
-    }
+    return baseWidth;
   };
 
   // Get height per line from template
@@ -750,11 +746,13 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
       t => t.type === type && t.content === content
     );
     
+    let baseHeight = fontSize * 1.5; // Default line height
+    
     if (template) {
-      return template.heightPerLine;
+      baseHeight = template.heightPerLine || baseHeight;
     }
     
-    return fontSize * 1.5; // Default line height
+    return baseHeight;
   };
 
   drag(elementRef);
@@ -965,10 +963,10 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
             width: '100%',
             height: '100%',
             backgroundColor: backgroundColor || 'white',
-            borderRadius: borderRadius ? `${borderRadius}px` : 0,
+            borderRadius: borderRadius ? `${borderRadius * displayScale}px` : 0,
             boxShadow: shadow ? '0 4px 8px rgba(0,0,0,0.1)' : 'none',
-            padding: padding ? `${padding}px` : 0,
-            border: borderWidth > 0 ? `${borderWidth}px ${borderStyle} ${borderColor}` : 'none',
+            padding: padding ? `${padding * displayScale}px` : 0,
+            border: borderWidth > 0 ? `${borderWidth * displayScale}px ${borderStyle} ${borderColor}` : 'none',
             boxSizing: 'border-box'
           }}
         />
@@ -1003,16 +1001,16 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
         left: `${currentPosition.x * displayScale}px`,
         top: `${currentPosition.y * displayScale}px`,
         width: `${width * displayScale}px`,
-        minWidth: `${(getMinWidth?.() ?? 100) * displayScale}px`,
+        minWidth: `${getMinWidth() * displayScale}px`,
         height: `${height * displayScale}px`,
-        minHeight: `${(getHeightPerLine?.() ?? 20) * displayScale}px`,
+        minHeight: `${getHeightPerLine() * displayScale}px`,
         opacity: isDragging ? 0.5 : 1,
         cursor: 'move',
-        border: borderWidth > 0 ? `${borderWidth}px ${borderStyle} ${borderColor}` : 'none',
+        border: borderWidth > 0 ? `${borderWidth * displayScale}px ${borderStyle} ${borderColor}` : 'none',
         backgroundColor: backgroundColor || 'transparent',
         display: 'flex',
         flexDirection: 'column',
-        padding: padding ? `${padding}px` : 0,
+        padding: padding ? `${padding * displayScale}px` : 0,
         margin: 0,
         boxSizing: 'border-box',
         transition: isDragging ? 'none' : 'all 0.1s ease',
@@ -1020,7 +1018,7 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
         outline: isSelected ? '2px solid #2196F3' : 'none',
         fontSize: `${fontSize * displayScale}px`,
         transform: 'none',
-        borderRadius: borderRadius ? `${borderRadius}px` : 0,
+        borderRadius: borderRadius ? `${borderRadius * displayScale}px` : 0,
         boxShadow: shadow ? '0 4px 8px rgba(0,0,0,0.1)' : 'none',
         overflow: 'visible',
         '&:hover': {

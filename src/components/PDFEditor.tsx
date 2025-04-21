@@ -1,10 +1,24 @@
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import PreviewIcon from '@mui/icons-material/Preview';
 import DownloadIcon from '@mui/icons-material/Download';
+import PreviewIcon from '@mui/icons-material/Preview';
 import UploadIcon from '@mui/icons-material/Upload';
-import { Box, Button, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Snackbar, TextareaAutosize, Typography } from '@mui/material';
-import ChartJS from 'chart.js/auto';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import ZoomOutIcon from '@mui/icons-material/ZoomOut';
+import { 
+  Box, 
+  Button, 
+  FormControl, 
+  IconButton, 
+  InputLabel, 
+  MenuItem, 
+  Paper, 
+  Select, 
+  Slider, 
+  Snackbar, 
+  TextareaAutosize, 
+  Typography 
+} from '@mui/material';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useDrop } from 'react-dnd';
 import PdfWrapper from '../components/PDFWrapper';
 import { elementTemplates } from '../constants/templates';
@@ -63,6 +77,12 @@ const mapFontToPDF = (font: string): string => {
   return fontMap[font] || 'helvetica';
 };
 
+interface DisplayDimensions {
+  width: number;
+  height: number;
+  scale: number;
+}
+
 const PDFEditor: React.FC = () => {
   const {
     elements,
@@ -98,50 +118,66 @@ const PDFEditor: React.FC = () => {
       : { width: dimensions.width, height: dimensions.height };
   }, [paperSize, orientation]);
 
-  // Calculate display dimensions for responsive design
-  const getDisplayDimensions = useCallback(() => {
-    const containerWidth = window.innerWidth - 600; // Account for sidebars and padding
-    const containerHeight = window.innerHeight - 200; // Account for header and padding
+  const getDisplayDimensions = (containerWidth: number, containerHeight: number): DisplayDimensions => {
+    const padding = 40; // Padding around the paper
+    const availableWidth = containerWidth - (padding * 2);
+    const availableHeight = containerHeight - (padding * 2);
 
-    // Target to use 80% of available space while maintaining aspect ratio
-    const targetWidth = containerWidth * 0.8;
-    const targetHeight = containerHeight * 0.8;
+    const paperAspectRatio = paperDimensions.width / paperDimensions.height;
+    const containerAspectRatio = availableWidth / availableHeight;
 
-    const aspectRatio = paperDimensions.width / paperDimensions.height;
+    let width: number;
+    let height: number;
+    let scale: number;
 
-    if (targetWidth / aspectRatio <= targetHeight) {
-      // Width limited
-      return {
-        width: targetWidth,
-        height: targetWidth / aspectRatio,
-        scale: targetWidth / paperDimensions.width
-      };
+    if (containerAspectRatio > paperAspectRatio) {
+      // Container is wider than paper
+      height = availableHeight;
+      width = height * paperAspectRatio;
+      scale = height / paperDimensions.height;
     } else {
-      // Height limited
-      return {
-        width: targetHeight * aspectRatio,
-        height: targetHeight,
-        scale: targetHeight / paperDimensions.height
-      };
+      // Container is taller than paper
+      width = availableWidth;
+      height = width / paperAspectRatio;
+      scale = width / paperDimensions.width;
     }
-  }, [paperDimensions]);
 
-  const [displayDimensions, setDisplayDimensions] = useState(getDisplayDimensions());
+    return {
+      width,
+      height,
+      scale,
+    };
+  };
+
+  const [zoom, setZoom] = useState(1);
+  const [displayDimensions, setDisplayDimensions] = useState<DisplayDimensions>(getDisplayDimensions(window.innerWidth, window.innerHeight));
   const [showCopySuccess, setShowCopySuccess] = useState(false);
 
-  // Update display dimensions when paper size or orientation changes
+  // Update display dimensions when paper size, orientation, or zoom changes
   useEffect(() => {
-    setDisplayDimensions(getDisplayDimensions());
-  }, [paperSize, orientation, getDisplayDimensions]);
+    const baseDimensions = getDisplayDimensions(window.innerWidth, window.innerHeight);
+    setDisplayDimensions({
+      ...baseDimensions,
+      width: baseDimensions.width * zoom,
+      height: baseDimensions.height * zoom,
+      scale: baseDimensions.scale * zoom
+    });
+  }, [paperSize, orientation, zoom]);
 
   // Update display dimensions on window resize
   useEffect(() => {
     const handleResize = () => {
-      setDisplayDimensions(getDisplayDimensions());
+      const baseDimensions = getDisplayDimensions(window.innerWidth, window.innerHeight);
+      setDisplayDimensions({
+        ...baseDimensions,
+        width: baseDimensions.width * zoom,
+        height: baseDimensions.height * zoom,
+        scale: baseDimensions.scale * zoom
+      });
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [getDisplayDimensions]);
+  }, [zoom]);
 
   // Handle orientation change
   const handleOrientationChange = (newOrientation: 'portrait' | 'landscape') => {
@@ -206,7 +242,7 @@ const PDFEditor: React.FC = () => {
     if (!ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
+    
     // Draw cell borders
     ctx.strokeStyle = '#e0e0e0';
     ctx.lineWidth = 0.5;
@@ -256,9 +292,9 @@ const PDFEditor: React.FC = () => {
         t => t.type === item.type && t.content === item.content
       );
 
-      // Convert template dimensions to PDF points
-      const elementWidth = (template?.minWidth || 300) / displayDimensions.scale;
-      const elementHeight = (template?.heightPerLine || 100) / displayDimensions.scale;
+      // Convert template dimensions to PDF points, accounting for zoom
+      const elementWidth = (template?.minWidth || 300);
+      const elementHeight = (template?.heightPerLine || 100);
 
       // Calculate maximum allowed positions to keep element within bounds
       const maxX = paperDimensions.width - elementWidth;
@@ -269,7 +305,7 @@ const PDFEditor: React.FC = () => {
       const boundedY = Math.max(0, Math.min(pdfCoords.y, maxY));
 
       if (!item.id) {
-        const fontSize = (item.fontSize || template?.fontSize || 16) / displayDimensions.scale;
+        const fontSize = (item.fontSize || template?.fontSize || 16);
 
         const newElement = {
           type: item.type as 'text' | 'title' | 'image' | 'chart' | 'divider' | 'card',
@@ -286,7 +322,7 @@ const PDFEditor: React.FC = () => {
           borderStyle: 'none',
           borderColor: '#000000',
           borderWidth: 0,
-          padding: item.type === 'card' ? 10 / displayDimensions.scale : 0
+          padding: item.type === 'card' ? 10 : 0
         };
 
         addElement(newElement);
@@ -301,7 +337,7 @@ const PDFEditor: React.FC = () => {
 
       const dragPreview = monitor.getSourceClientOffset();
       if (!dragPreview) return;
-
+      
       const paperRect = paperRef.current.getBoundingClientRect();
       const relativeX = dragPreview.x - paperRect.left;
       const relativeY = dragPreview.y - paperRect.top;
@@ -335,10 +371,6 @@ const PDFEditor: React.FC = () => {
     const pdfWidth = orientation === 'landscape' ? basePaperDimensions.height : basePaperDimensions.width;
     const pdfHeight = orientation === 'landscape' ? basePaperDimensions.width : basePaperDimensions.height;
 
-    // Calculate the scale factor based on the actual paper dimensions
-    const scaleX = pdfWidth / paperDimensions.width;
-    const scaleY = pdfHeight / paperDimensions.height;
-
     const pdf = new PdfWrapper({
       orient: orientation === 'landscape' ? 'l' : 'p',
       x: 0,
@@ -354,32 +386,14 @@ const PDFEditor: React.FC = () => {
     // Initialize the page without any margins
     pdf.initPage({ header: false, footer: false });
 
-    // Draw grid (optional, for debugging)
-    const drawGrid = false; // Set to true to see the grid in PDF
-    if (drawGrid) {
-      pdfInstance.setDrawColor(200, 200, 200);
-      pdfInstance.setLineWidth(0.1);
-
-      // Draw vertical lines
-      for (let x = 0; x <= CELLS_X; x++) {
-        const xPos = (x * pdfWidth) / CELLS_X;
-        pdfInstance.line(xPos, 0, xPos, pdfHeight);
-      }
-
-      // Draw horizontal lines
-      for (let y = 0; y <= CELLS_Y; y++) {
-        const yPos = (y * pdfHeight) / CELLS_Y;
-        pdfInstance.line(0, yPos, pdfWidth, yPos);
-      }
-    }
-
     // Create a promise for each chart rendering
     const chartPromises = elements.map(element => {
       if (element.type === 'text' || element.type === 'title') {
         return Promise.resolve(() => {
           // Set up text properties before measuring
           pdfInstance.setFont(mapFontToPDF(element.fontFamily || 'Arial'));
-          pdfInstance.setFontSize(element.fontSize || 16);
+          const fontSize = element.fontSize || 16;
+          pdfInstance.setFontSize(fontSize);
 
           // Get text width for alignment calculations
           const textWidth = typeof element.content === 'string'
@@ -387,15 +401,15 @@ const PDFEditor: React.FC = () => {
             : 0;
 
           // Calculate baseline offset for text
-          const baselineOffset = (element.fontSize || 16) * 0.75;
+          const baselineOffset = fontSize * 0.75;
 
-          // Calculate text position with proper scaling
-          let textX = element.position.x * scaleX;
-          let textY = element.position.y * scaleY + baselineOffset;
+          // Calculate text position
+          let textX = element.position.x;
+          let textY = element.position.y + baselineOffset;
 
           // If there's padding, adjust the position and available width
-          const padding = (element.padding || 0) * scaleX;
-          const availableWidth = element.width * scaleX - (padding * 2);
+          const padding = element.padding || 0;
+          const availableWidth = element.width - (padding * 2);
           textX += padding;
           textY += padding;
 
@@ -412,133 +426,72 @@ const PDFEditor: React.FC = () => {
               x: textX,
               y: textY,
               fontName: mapFontToPDF(element.fontFamily || 'Arial'),
-              fontSize: element.fontSize || 16,
+              fontSize: fontSize,
               fontStyle: element.fontStyle || 'normal',
               fontWeight: element.fontWeight || 'normal',
-              align: 'left', // We handle alignment manually through x position
+              align: 'left',
               color: element.textColor || '#000000'
             });
           }
         });
       } else if (element.type === 'card') {
         return Promise.resolve(() => {
+          // Use direct positions and dimensions without scaling
+          const x = element.position.x;
+          const y = element.position.y;
+          const width = element.width;
+          const height = element.height;
+          const borderWidth = element.borderWidth || 0;
+          const borderRadius = element.borderRadius || 0;
+
           // Draw card background
-          // Set border color and width if border is enabled
-          if (element.borderWidth && element.borderWidth > 0) {
+          if (borderWidth > 0) {
             pdfInstance.setDrawColor(element.borderColor || '#000000');
-            pdfInstance.setLineWidth(element.borderWidth * scaleX);
+            pdfInstance.setLineWidth(borderWidth);
           }
 
           // If shadow is enabled, draw it first
           if (element.shadow) {
             pdfInstance.setFillColor(200, 200, 200);
             pdf.roundedRect(
-              element.position.x * scaleX + (2 * scaleX),
-              element.position.y * scaleY + (2 * scaleY),
-              element.width * scaleX,
-              element.height * scaleY,
-              element.borderRadius ? element.borderRadius * scaleX : 0,
+              x + 2,
+              y + 2,
+              width,
+              height,
+              borderRadius,
               'F'
             );
           }
 
-          // Draw the main rectangle with border radius if specified
+          // Draw the main rectangle
           pdfInstance.setFillColor(element.backgroundColor || '#ffffff');
-          if (element.borderRadius && element.borderRadius > 0) {
+          if (borderRadius > 0) {
             pdf.roundedRect(
-              element.position.x * scaleX,
-              element.position.y * scaleY,
-              element.width * scaleX,
-              element.height * scaleY,
-              element.borderRadius * scaleX,
-              element.borderWidth && element.borderWidth > 0 ? 'FD' : 'F'
+              x,
+              y,
+              width,
+              height,
+              borderRadius,
+              borderWidth > 0 ? 'FD' : 'F'
             );
           } else {
             pdf.rect(
-              element.position.x * scaleX,
-              element.position.y * scaleY,
-              element.width * scaleX,
-              element.height * scaleY,
-              element.borderWidth && element.borderWidth > 0 ? 'FD' : 'F'
+              x,
+              y,
+              width,
+              height,
+              borderWidth > 0 ? 'FD' : 'F'
             );
           }
         });
-      } else if (element.type === 'chart') {
-        return new Promise((resolve) => {
-          // Create a canvas element
-          const canvas = document.createElement('canvas');
-          // Use the actual PDF dimensions instead of scaled dimensions
-          canvas.width = element.width;
-          canvas.height = element.height;
-          const ctx = canvas.getContext('2d');
-
-          if (!ctx) {
-            console.error('Could not get canvas context');
-            resolve(() => { });
-            return;
-          }
-
-          try {
-            // Parse the chart content
-            const chartConfig = typeof element.content === 'string' 
-              ? JSON.parse(element.content) 
-              : element.content;
-
-            // Create a new chart instance with proper configuration
-            const chart = new ChartJS(ctx, {
-              type: chartConfig.type,
-              data: {
-                labels: chartConfig.data.labels,
-                datasets: chartConfig.data.datasets.map((dataset: { label: string; data: number[]; backgroundColor?: string; borderColor?: string; borderWidth?: number }) => ({
-                  label: dataset.label,
-                  data: dataset.data,
-                  backgroundColor: dataset.backgroundColor || 'rgba(54, 162, 235, 0.5)',
-                  borderColor: dataset.borderColor || 'rgba(54, 162, 235, 1)',
-                  borderWidth: dataset.borderWidth || 1
-                }))
-              },
-              options: {
-                ...chartConfig.options,
-                responsive: false,
-                maintainAspectRatio: false,
-                animation: {
-                  duration: 0 // Disable animations for PDF export
-                }
-              }
-            });
-
-            // Wait for the chart to render
-            setTimeout(() => {
-              try {
-                // Convert the chart to an image and add it to the PDF
-                const imageData = canvas.toDataURL('image/png');
-                pdf.addImage(imageData, {
-                  x: element.position.x * scaleX,
-                  y: element.position.y * scaleY,
-                  w: element.width * scaleX,
-                  h: element.height * scaleY
-                });
-              } catch (error) {
-                console.error('Error converting chart to image:', error);
-              }
-
-              // Clean up
-              chart.destroy();
-              resolve(() => { });
-            }, 100);
-          } catch (error) {
-            console.error('Error creating chart:', error);
-            resolve(() => { });
-          }
-        });
-      } else if (element.type === 'image') {
+      } else if (element.type === 'chart' || element.type === 'image') {
         return Promise.resolve(() => {
           if (typeof element.content === 'string') {
             pdf.addImage(element.content, {
-              x: element.position.x * scaleX,
-              y: element.position.y * scaleY,
-              w: element.width * scaleX,
-              h: element.height * scaleY
+              x: element.position.x,
+              y: element.position.y,
+              w: element.width,
+              h: element.height
             });
           }
         });
@@ -546,13 +499,13 @@ const PDFEditor: React.FC = () => {
         return Promise.resolve(() => {
           pdfInstance.setDrawColor(element.borderColor || '#000000');
           pdfInstance.setFillColor(element.borderColor || '#000000');
-          pdfInstance.setLineWidth(element.height * scaleY);
+          pdfInstance.setLineWidth(element.height);
 
           pdf.rect(
-            element.position.x * scaleX,
-            element.position.y * scaleY,
-            element.width * scaleX,
-            element.height * scaleY,
+            element.position.x,
+            element.position.y,
+            element.width,
+            element.height,
             'F'
           );
         });
@@ -573,7 +526,7 @@ const PDFEditor: React.FC = () => {
 
   const handleContentChange = (id: string, content: ContentType) => {
     if (typeof content === 'string') {
-      updateElementStyle(id, { content });
+    updateElementStyle(id, { content });
     } else {
       updateElementStyle(id, { content: JSON.stringify(content) });
     }
@@ -642,8 +595,22 @@ const PDFEditor: React.FC = () => {
             <MenuItem value="landscape">Landscape</MenuItem>
           </Select>
         </FormControl>
-        <Button
-          variant="contained"
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 200 }}>
+          <ZoomOutIcon fontSize="small" onClick={() => setZoom(zoom - 0.1)} />
+          <Slider
+            value={zoom}
+            onChange={(_, value) => setZoom(value as number)}
+            min={0.5}
+            max={2}
+            step={0.1}
+            valueLabelDisplay="auto"
+            valueLabelFormat={(value) => `${Math.round(value * 100)}%`}
+            sx={{ mx: 2 }}
+          />
+          <ZoomInIcon fontSize="small" onClick={() => setZoom(zoom + 0.1)} />
+        </Box>
+        <Button 
+          variant="contained" 
           color="primary"
           onClick={handleExportPDF}
           startIcon={<PreviewIcon />}
@@ -681,9 +648,9 @@ const PDFEditor: React.FC = () => {
         overflow: 'hidden'
       }}>
         {/* Center - PDF Paper */}
-        <Box
+        <Box 
           ref={paperContainerRef}
-          sx={{
+          sx={{ 
             flex: 1,
             p: 4,
             display: 'flex',
@@ -765,8 +732,8 @@ const PDFEditor: React.FC = () => {
         </Box>
 
         {/* Right sidebar - Generated Code */}
-        <Box sx={{
-          width: '300px',
+        <Box sx={{ 
+          width: '300px', 
           borderLeft: '1px solid #eee',
           display: 'flex',
           flexDirection: 'column',
@@ -779,8 +746,8 @@ const PDFEditor: React.FC = () => {
             alignItems: 'center',
             justifyContent: 'space-between',
             borderBottom: '1px solid #eee'
-          }}>
-            <Typography variant="h6">Generated Code</Typography>
+        }}>
+          <Typography variant="h6">Generated Code</Typography>
             <IconButton
               onClick={handleCopyCode}
               size="small"
@@ -813,23 +780,23 @@ const PDFEditor: React.FC = () => {
             },
             height: '100%'
           }}>
-            <TextareaAutosize
-              value={generatedCode}
-              readOnly
-              style={{
-                width: '100%',
+          <TextareaAutosize
+            value={generatedCode}
+            readOnly
+            style={{
+              width: '100%',
                 height: 'calc(100vh - 230px)',
-                fontFamily: 'monospace',
-                padding: '8px',
-                color: 'black',
-                backgroundColor: '#f5f5f5',
-                border: '1px solid #ddd',
-                borderRadius: '4px',
-                resize: 'none'
-              }}
-            />
-          </Box>
+              fontFamily: 'monospace',
+              padding: '8px',
+              color: 'black',
+              backgroundColor: '#f5f5f5',
+              border: '1px solid #ddd',
+              borderRadius: '4px',
+              resize: 'none'
+            }}
+          />
         </Box>
+      </Box>
       </Box>
 
       <Snackbar
