@@ -118,7 +118,7 @@ export const elementTemplates: Record<string, ElementTemplate> = {
         datasets: [{
           label: 'Sample Data',
           data: [65, 59, 80, 81, 56],
-          backgroundColor: 'rgba(54, 162, 235, 0.2)',
+          backgroundColor: 'rgba(54, 162, 235, 0.5)',
           borderColor: 'rgba(54, 162, 235, 1)',
           borderWidth: 1
         }]
@@ -138,6 +138,37 @@ export const elementTemplates: Record<string, ElementTemplate> = {
     minWidth: 300,
     heightPerLine: 200
   },
+  'Horizontal Bar Chart': {
+    type: 'chart',
+    content: {
+      type: 'bar',
+      data: {
+        labels: ['Category A', 'Category B', 'Category C', 'Category D', 'Category E'],
+        datasets: [{
+          label: 'Sample Data',
+          data: [65, 59, 80, 81, 56],
+          backgroundColor: 'rgba(75, 192, 192, 0.5)',
+          borderColor: 'rgba(75, 192, 192, 1)',
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: 'y',
+        scales: {
+          x: {
+            beginAtZero: true,
+            type: 'linear'
+          }
+        }
+      }
+    },
+    label: 'Horizontal Bar Chart',
+    group: 'charts',
+    minWidth: 300,
+    heightPerLine: 200
+  },
   'Line Chart': {
     type: 'chart',
     content: {
@@ -147,9 +178,10 @@ export const elementTemplates: Record<string, ElementTemplate> = {
         datasets: [{
           label: 'Sample Data',
           data: [65, 59, 80, 81, 56],
-          backgroundColor: 'rgba(75, 192, 192, 0.2)',
+          backgroundColor: 'rgba(75, 192, 192, 0.5)',
           borderColor: 'rgba(75, 192, 192, 1)',
-          borderWidth: 2
+          borderWidth: 2,
+          tension: 0.4
         }]
       },
       options: {
@@ -167,6 +199,39 @@ export const elementTemplates: Record<string, ElementTemplate> = {
     minWidth: 300,
     heightPerLine: 200
   },
+  'Horizontal Line Chart': {
+    type: 'chart',
+    content: {
+      type: 'line',
+      data: {
+        labels: ['Category A', 'Category B', 'Category C', 'Category D', 'Category E'],
+        datasets: [{
+          label: 'Sample Data',
+          data: [65, 59, 80, 81, 56],
+          backgroundColor: 'rgba(153, 102, 255, 0.5)',
+          borderColor: 'rgba(153, 102, 255, 1)',
+          borderWidth: 2,
+          fill: true,
+          cubicInterpolationMode: 'monotone'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: 'y',
+        scales: {
+          x: {
+            beginAtZero: true,
+            type: 'linear'
+          }
+        }
+      }
+    },
+    label: 'Horizontal Line Chart',
+    group: 'charts',
+    minWidth: 300,
+    heightPerLine: 200
+  },
   'Pie Chart': {
     type: 'chart',
     content: {
@@ -176,11 +241,11 @@ export const elementTemplates: Record<string, ElementTemplate> = {
         datasets: [{
           data: [12, 19, 3, 5, 2],
           backgroundColor: [
-            'rgba(255, 99, 132, 0.2)',
-            'rgba(54, 162, 235, 0.2)',
-            'rgba(255, 206, 86, 0.2)',
-            'rgba(75, 192, 192, 0.2)',
-            'rgba(153, 102, 255, 0.2)'
+            'rgba(255, 99, 132, 0.5)',
+            'rgba(54, 162, 235, 0.5)',
+            'rgba(255, 206, 86, 0.5)',
+            'rgba(75, 192, 192, 0.5)',
+            'rgba(153, 102, 255, 0.5)'
           ],
           borderColor: [
             'rgba(255, 99, 132, 1)',
@@ -207,133 +272,8 @@ export const elementTemplates: Record<string, ElementTemplate> = {
     content: {
       type: 'doughnut',
       data: {
-        labels: ['Red', 'Blue', 'Yellow', 'Green', 'Purple'],
-        datasets: [{
-          data: [12, 19, 3, 5, 2],
-          backgroundColor: [
-            'rgba(255, 99, 132, 0.2)',
-            'rgba(54, 162, 235, 0.2)',
-            'rgba(255, 206, 86, 0.2)',
-            'rgba(75, 192, 192, 0.2)',
-            'rgba(153, 102, 255, 0.2)'
-          ],
-          borderColor: [
-            'rgba(255, 99, 132, 1)',
-            'rgba(54, 162, 235, 1)',
-            'rgba(255, 206, 86, 1)',
-            'rgba(75, 192, 192, 1)',
-            'rgba(153, 102, 255, 1)'
-          ],
-          borderWidth: 1
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false
-      }
-    },
-    label: 'Doughnut Chart',
-    group: 'charts',
-    minWidth: 300,
-    heightPerLine: 200
-  },
-  barChart: {
-    type: 'chart',
-    content: {
-      type: 'bar',
-      data: {
-        labels: ['January', 'February', 'March', 'April', 'May'],
-        datasets: [{
-          label: 'Sales 2023',
-          data: [65, 59, 80, 81, 56],
-          backgroundColor: 'rgba(54, 162, 235, 0.5)',
-          borderColor: 'rgba(54, 162, 235, 1)',
-          borderWidth: 1
-        }]
-      },
-      options: {
-        scales: {
-          y: {
-            beginAtZero: true
-          }
-        }
-      }
-    },
-    label: 'Bar Chart',
-    group: 'charts',
-    minWidth: 300,
-    heightPerLine: 200
-  },
-  lineChart: {
-    type: 'chart',
-    content: {
-      type: 'line',
-      data: {
-        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-        datasets: [{
-          label: 'Temperature',
-          data: [12, 19, 15, 25, 22, 30],
-          backgroundColor: 'rgba(255, 99, 132, 0.5)',
-          borderColor: 'rgba(255, 99, 132, 1)',
-          borderWidth: 2
-        }]
-      },
-      options: {
-        scales: {
-          y: {
-            beginAtZero: true
-          }
-        }
-      }
-    },
-    label: 'Line Chart',
-    group: 'charts',
-    minWidth: 300,
-    heightPerLine: 200
-  },
-  pieChart: {
-    type: 'chart',
-    content: {
-      type: 'pie',
-      data: {
-        labels: ['Red', 'Blue', 'Yellow', 'Green', 'Purple'],
-        datasets: [{
-          label: 'Color Distribution',
-          data: [30, 20, 15, 25, 10],
-          backgroundColor: [
-            'rgba(255, 99, 132, 0.5)',
-            'rgba(54, 162, 235, 0.5)',
-            'rgba(255, 206, 86, 0.5)',
-            'rgba(75, 192, 192, 0.5)',
-            'rgba(153, 102, 255, 0.5)'
-          ],
-          borderColor: [
-            'rgba(255, 99, 132, 1)',
-            'rgba(54, 162, 235, 1)',
-            'rgba(255, 206, 86, 1)',
-            'rgba(75, 192, 192, 1)',
-            'rgba(153, 102, 255, 1)'
-          ],
-          borderWidth: 1
-        }]
-      },
-      options: {
-        responsive: true
-      }
-    },
-    label: 'Pie Chart',
-    group: 'charts',
-    minWidth: 300,
-    heightPerLine: 200
-  },
-  doughnutChart: {
-    type: 'chart',
-    content: {
-      type: 'doughnut',
-      data: {
         labels: ['Desktop', 'Mobile', 'Tablet'],
         datasets: [{
-          label: 'Device Usage',
           data: [60, 30, 10],
           backgroundColor: [
             'rgba(255, 99, 132, 0.5)',
@@ -349,7 +289,8 @@ export const elementTemplates: Record<string, ElementTemplate> = {
         }]
       },
       options: {
-        responsive: true
+        responsive: true,
+        maintainAspectRatio: false
       }
     },
     label: 'Doughnut Chart',
@@ -357,7 +298,7 @@ export const elementTemplates: Record<string, ElementTemplate> = {
     minWidth: 300,
     heightPerLine: 200
   },
-  multiDatasetChart: {
+  'Multi Dataset Chart': {
     type: 'chart',
     content: {
       type: 'bar',
@@ -378,6 +319,8 @@ export const elementTemplates: Record<string, ElementTemplate> = {
         }]
       },
       options: {
+        responsive: true,
+        maintainAspectRatio: false,
         scales: {
           y: {
             beginAtZero: true

@@ -25,6 +25,11 @@ import { elementTemplates } from '../constants/templates';
 import { usePDFContext } from '../hooks/usePdf';
 import { ContentType } from '../types/pdf';
 import DraggableElement from './DraggableElement';
+import { Chart as ChartJS, registerables } from 'chart.js';
+import 'chart.js/auto';
+
+// Register Chart.js components
+ChartJS.register(...registerables);
 
 // Grid configuration
 const CELLS_X = 60; // For A4 width (595 points)
@@ -387,7 +392,7 @@ const PDFEditor: React.FC = () => {
     pdf.initPage({ header: false, footer: false });
 
     // Create a promise for each chart rendering
-    const chartPromises = elements.map(element => {
+    const renderPromises = elements.map(element => {
       if (element.type === 'text' || element.type === 'title') {
         return Promise.resolve(() => {
           // Set up text properties before measuring
@@ -434,57 +439,124 @@ const PDFEditor: React.FC = () => {
             });
           }
         });
+      } else if (element.type === 'chart') {
+        return Promise.resolve(() => {
+          console.log('Starting chart render for PDF...');
+          
+          // Create a canvas element
+          const chartCanvas = document.createElement('canvas');
+          document.body.appendChild(chartCanvas); // Add to DOM temporarily for proper rendering
+          
+          // Set canvas size
+          chartCanvas.style.width = `${element.width}px`;
+          chartCanvas.style.height = `${element.height}px`;
+          chartCanvas.width = element.width;
+          chartCanvas.height = element.height;
+          
+          const ctx = chartCanvas.getContext('2d');
+          if (!ctx) {
+            console.error('Failed to get canvas context');
+            document.body.removeChild(chartCanvas);
+            return;
+          }
+
+          try {
+            // Parse chart config
+            const chartConfig = typeof element.content === 'string' 
+              ? JSON.parse(element.content) 
+              : element.content;
+
+            console.log('Chart config:', chartConfig);
+
+            // Create chart instance
+            const chart = new ChartJS(ctx, {
+              type: chartConfig.type,
+              data: chartConfig.data,
+              options: {
+                ...chartConfig.options,
+                responsive: false,
+                animation: false,
+                plugins: {
+                  legend: {
+                    display: true
+                  }
+                }
+              }
+            });
+
+            // Force a synchronous render
+            chart.draw();
+            
+            // Get the image data
+            const imageData = chartCanvas.toDataURL('image/png');
+            console.log('Chart rendered, image data length:', imageData.length);
+
+            // Clean up
+            chart.destroy();
+            document.body.removeChild(chartCanvas);
+
+            // Add to PDF
+            pdf.addImage(imageData, {
+              x: element.position.x,
+              y: element.position.y,
+              w: element.width,
+              h: element.height
+            });
+
+            console.log('Chart added to PDF');
+          } catch (error) {
+            console.error('Error rendering chart:', error);
+            if (chartCanvas.parentNode) {
+              document.body.removeChild(chartCanvas);
+            }
+          }
+        });
       } else if (element.type === 'card') {
         return Promise.resolve(() => {
-          // Use direct positions and dimensions without scaling
-          const x = element.position.x;
-          const y = element.position.y;
-          const width = element.width;
-          const height = element.height;
-          const borderWidth = element.borderWidth || 0;
-          const borderRadius = element.borderRadius || 0;
-
           // Draw card background
-          if (borderWidth > 0) {
+          const pdfInstance = pdf.getPdfInstance();
+          
+          // Set border color and width if border is enabled
+          if (element.borderWidth && element.borderWidth > 0) {
             pdfInstance.setDrawColor(element.borderColor || '#000000');
-            pdfInstance.setLineWidth(borderWidth);
+            pdfInstance.setLineWidth(element.borderWidth);
           }
 
           // If shadow is enabled, draw it first
           if (element.shadow) {
             pdfInstance.setFillColor(200, 200, 200);
             pdf.roundedRect(
-              x + 2,
-              y + 2,
-              width,
-              height,
-              borderRadius,
+              element.position.x + 2,
+              element.position.y + 2,
+              element.width,
+              element.height,
+              element.borderRadius || 0,
               'F'
             );
           }
 
           // Draw the main rectangle
           pdfInstance.setFillColor(element.backgroundColor || '#ffffff');
-          if (borderRadius > 0) {
+          if (element.borderRadius && element.borderRadius > 0) {
             pdf.roundedRect(
-              x,
-              y,
-              width,
-              height,
-              borderRadius,
-              borderWidth > 0 ? 'FD' : 'F'
+              element.position.x,
+              element.position.y,
+              element.width,
+              element.height,
+              element.borderRadius,
+              element.borderWidth && element.borderWidth > 0 ? 'FD' : 'F'
             );
           } else {
             pdf.rect(
-              x,
-              y,
-              width,
-              height,
-              borderWidth > 0 ? 'FD' : 'F'
+              element.position.x,
+              element.position.y,
+              element.width,
+              element.height,
+              element.borderWidth && element.borderWidth > 0 ? 'FD' : 'F'
             );
           }
         });
-      } else if (element.type === 'chart' || element.type === 'image') {
+      } else if (element.type === 'image') {
         return Promise.resolve(() => {
           if (typeof element.content === 'string') {
             pdf.addImage(element.content, {
@@ -510,17 +582,33 @@ const PDFEditor: React.FC = () => {
           );
         });
       }
-      return Promise.resolve(() => { });
+      return Promise.resolve(() => {});
     });
 
-    Promise.all(chartPromises).then((drawFunctions) => {
-      (drawFunctions as (() => void)[]).forEach(draw => draw());
+    // Wait for all chart renderings to complete before generating PDF
+    Promise.all(renderPromises).then((drawFunctions) => {
+      console.log('All elements processed, drawing PDF...');
+      
+      // Execute all draw functions in sequence
+      (drawFunctions as (() => void)[]).forEach(draw => {
+        try {
+          draw();
+        } catch (error) {
+          console.error('Error during draw function:', error);
+        }
+      });
+
+      console.log('PDF drawing complete, creating blob...');
       const pdfBlob = pdf.toBlob();
       const blobUrl = URL.createObjectURL(pdfBlob);
       window.open(blobUrl, '_blank');
+
+      // Clean up blob URL after delay
       setTimeout(() => {
         URL.revokeObjectURL(blobUrl);
       }, 1000);
+    }).catch(error => {
+      console.error('Error during PDF generation:', error);
     });
   };
 
