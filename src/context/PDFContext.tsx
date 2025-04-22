@@ -147,8 +147,16 @@ const PDFProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => 
       } else if (element.type === 'card') {
         lines.push('');
         lines.push('// Add card background');
+        if (element.borderWidth && element.borderWidth > 0) {
+          lines.push(`pdfInstance.setDrawColor('${element.borderColor || '#000000'}');`);
+          lines.push(`pdfInstance.setLineWidth(${element.borderWidth});`);
+        }
         lines.push(`pdfInstance.setFillColor('${element.backgroundColor || '#ffffff'}');`);
-        lines.push(`pdf.roundedRect(${Math.round(element.position.x)}, ${Math.round(element.position.y)}, ${Math.round(element.width)}, ${Math.round(element.height)}, ${element.borderRadius || 0}, 'F');`);
+        if (element.borderRadius && element.borderRadius > 0) {
+          lines.push(`pdf.roundedRect(${Math.round(element.position.x)}, ${Math.round(element.position.y)}, ${Math.round(element.width)}, ${Math.round(element.height)}, ${element.borderRadius}, '${element.borderWidth && element.borderWidth > 0 ? 'FD' : 'F'}');`);
+        } else {
+          lines.push(`pdf.rect(${Math.round(element.position.x)}, ${Math.round(element.position.y)}, ${Math.round(element.width)}, ${Math.round(element.height)}, '${element.borderWidth && element.borderWidth > 0 ? 'FD' : 'F'}');`);
+        }
       } else if (element.type === 'divider') {
         lines.push('');
         lines.push('// Add divider');

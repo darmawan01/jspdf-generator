@@ -76,10 +76,20 @@ const ColorPicker: React.FC<ColorPickerProps> = ({ color, onChange, label }) => 
 
   const open = Boolean(anchorEl);
 
+  // Prevent click events from bubbling up to parent popover
+  const handleClickInside = (e: React.MouseEvent) => {
+    e.stopPropagation();
+  };
+
+  // Prevent mousedown events from bubbling up
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+  };
+
   return (
-    <Box>
+    <Box onClick={handleClickInside} onMouseDown={handleMouseDown}>
       {label && (
-        <Typography variant="caption" display="block" gutterBottom>
+        <Typography variant="caption" display="block" sx={{ mb: 0.5 }}>
           {label}
         </Typography>
       )}
@@ -88,7 +98,7 @@ const ColorPicker: React.FC<ColorPickerProps> = ({ color, onChange, label }) => 
         onClick={handleClick}
         sx={{
           width: '100%',
-          height: '32px',
+          height: '24px',
           border: '1px solid #ccc',
           borderRadius: '4px',
           cursor: 'pointer',
@@ -96,8 +106,8 @@ const ColorPicker: React.FC<ColorPickerProps> = ({ color, onChange, label }) => 
                       linear-gradient(-45deg, #ccc 25%, transparent 25%),
                       linear-gradient(45deg, transparent 75%, #ccc 75%),
                       linear-gradient(-45deg, transparent 75%, #ccc 75%)`,
-          backgroundSize: '10px 10px',
-          backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0px',
+          backgroundSize: '8px 8px',
+          backgroundPosition: '0 0, 0 4px, 4px -4px, -4px 0px',
           position: 'relative',
           '&:hover': {
             borderColor: '#999'
@@ -120,6 +130,8 @@ const ColorPicker: React.FC<ColorPickerProps> = ({ color, onChange, label }) => 
         open={open}
         anchorEl={anchorEl}
         onClose={handleClose}
+        onClick={handleClickInside}
+        onMouseDown={handleMouseDown}
         anchorOrigin={{
           vertical: 'bottom',
           horizontal: 'left',
@@ -128,49 +140,81 @@ const ColorPicker: React.FC<ColorPickerProps> = ({ color, onChange, label }) => 
           vertical: 'top',
           horizontal: 'left',
         }}
-        disablePortal
-        container={anchorEl?.parentElement}
         slotProps={{
           paper: {
             sx: {
-              boxShadow: 3,
-              mt: 1
+              width: '100%',
+              minWidth: '200px',
+              maxWidth: '250px',
+              p: 1,
+              zIndex: 9999,
+              '& input[type="color"]': {
+                width: '100%',
+                height: '24px',
+                padding: 0,
+                border: '1px solid #ccc',
+                borderRadius: '4px',
+                backgroundColor: '#fff'
+              }
             }
           }
         }}
+        style={{ zIndex: 9999 }}
       >
-        <Box sx={{ p: 2, width: 250, bgcolor: 'background.paper' }}>
-          <Box sx={{ mb: 2 }}>
-            <input
-              type="color"
-              value={currentColor}
-              onChange={handleColorChange}
-              style={{ width: '100%', height: '40px' }}
-            />
-          </Box>
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="caption" gutterBottom>
-              Opacity: {opacity}%
-            </Typography>
+        <Box sx={{ width: '100%' }} onClick={handleClickInside} onMouseDown={handleMouseDown}>
+          <input
+            type="color"
+            value={currentColor}
+            onChange={handleColorChange}
+          />
+          
+          <Box sx={{ mt: 1 }}>
+            <Box sx={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              mb: 0.5 
+            }}>
+              <Typography variant="caption">Opacity</Typography>
+              <Typography variant="caption">{opacity}%</Typography>
+            </Box>
             <Slider
               value={opacity}
               onChange={handleOpacityChange}
               min={0}
               max={100}
               step={1}
-              marks={[
-                { value: 0, label: '0%' },
-                { value: 50, label: '50%' },
-                { value: 100, label: '100%' }
-              ]}
+              size="small"
+              sx={{
+                '& .MuiSlider-thumb': {
+                  width: 12,
+                  height: 12
+                },
+                '& .MuiSlider-track': {
+                  height: 4
+                },
+                '& .MuiSlider-rail': {
+                  height: 4
+                }
+              }}
             />
           </Box>
+
           <TextField
             fullWidth
             size="small"
             value={getDisplayColor()}
             onChange={(e) => onChange(e.target.value)}
-            placeholder="Color value"
+            sx={{
+              mt: 1,
+              '& .MuiInputBase-root': {
+                height: '28px',
+                fontSize: '0.875rem'
+              },
+              '& .MuiOutlinedInput-input': {
+                padding: '4px 8px'
+              }
+            }}
           />
         </Box>
       </Popover>

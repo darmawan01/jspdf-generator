@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useDrag } from 'react-dnd';
-import { Box, Typography, IconButton, FormControl, InputLabel, Select, MenuItem, TextField, Slider, Popover, ToggleButton, ToggleButtonGroup, FormControlLabel, Switch, Paper, Button } from '@mui/material';
+import { Box, Typography, IconButton, FormControl, InputLabel, Select, MenuItem, TextField, Slider, ToggleButton, ToggleButtonGroup, FormControlLabel, Switch, Paper, Button, Portal } from '@mui/material';
 import { getEmptyImage } from 'react-dnd-html5-backend';
 import FormatAlignLeftIcon from '@mui/icons-material/FormatAlignLeft';
 import FormatAlignCenterIcon from '@mui/icons-material/FormatAlignCenter';
@@ -356,6 +356,9 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
   const elementRef = useRef<HTMLDivElement>(null);
   const hideTimeoutRef = useRef<number | null>(null);
   const [chartSettings, setChartSettings] = useState<ChartSettings>(DEFAULT_CHART_DATA);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [initialMenuPosition, setInitialMenuPosition] = useState<{ top: number; left: number } | null>(null);
 
   // Disable drag when settings are open
   const isSettingsOpen = Boolean(anchorEl);
@@ -530,12 +533,58 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
 
   const handleStyleClick = (event: React.MouseEvent<HTMLElement>) => {
     event.stopPropagation();
-    setAnchorEl(event.currentTarget);
+    if (!anchorEl) {
+      const buttonRect = event.currentTarget.getBoundingClientRect();
+      const menuWidth = Math.min(300, window.innerWidth - 16); // Responsive width
+      const menuHeight = 350; // Further reduced to match actual content height
+      
+      // Calculate available space below and above
+      const spaceBelow = window.innerHeight - buttonRect.bottom;
+      const spaceAbove = buttonRect.top;
+      
+      // Determine if we should show above or below
+      const showAbove = spaceBelow < menuHeight && spaceAbove > spaceBelow;
+      
+      // Calculate position
+      let left = buttonRect.left;
+      let top = showAbove 
+        ? buttonRect.top - menuHeight - 10
+        : buttonRect.bottom + 8;
+      
+      // Check if menu would go off the right edge
+      if (left + menuWidth > window.innerWidth) {
+        left = window.innerWidth - menuWidth - 8;
+      }
+      
+      // Ensure menu stays within viewport
+      left = Math.max(8, Math.min(left, window.innerWidth - menuWidth - 8));
+      top = Math.max(8, Math.min(top, window.innerHeight - menuHeight - 8));
+      
+      setInitialMenuPosition({ top, left });
+      setAnchorEl(event.currentTarget);
+    } else {
+      setAnchorEl(null);
+      setInitialMenuPosition(null);
+    }
   };
 
-  const handleClose = () => {
-    setAnchorEl(null);
-  };
+  // Add click outside handler
+  useEffect(() => {
+    if (!anchorEl) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        menuRef.current && 
+        !menuRef.current.contains(event.target as Node) &&
+        !settingsButtonRef.current?.contains(event.target as Node)
+      ) {
+        setAnchorEl(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [anchorEl]);
 
   const handleStyleChange = (updates: Partial<DraggableElementProps>) => {
     onStyleChange(id, updates);
@@ -1130,11 +1179,12 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
         <Box
           sx={{
             position: 'absolute',
-            top: '-48px', // Increased gap
+            top: '-48px',
             right: 0,
             display: 'flex',
             flexDirection: 'column',
-            gap: 1
+            gap: 1,
+            zIndex: 1000
           }}
         >
           <Paper
@@ -1144,13 +1194,7 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
               p: 0.5,
               backgroundColor: 'rgba(255, 255, 255, 0.9)',
               boxShadow: 2,
-              zIndex: zIndex + 2,
-              borderRadius: 1,
-              transition: 'opacity 0.2s ease',
-              opacity: 1,
-              '&:hover': {
-                opacity: 1
-              }
+              borderRadius: 1
             }}
           >
             <IconButton size="small" onClick={() => sendToBack(id)} title="Send to Back">
@@ -1166,8 +1210,9 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
               <VerticalAlignTopIcon fontSize="small" />
             </IconButton>
             <IconButton 
+              ref={settingsButtonRef}
               size="small" 
-              onClick={handleStyleClick} 
+              onClick={handleStyleClick}
               title="Style Settings"
             >
               <SettingsIcon fontSize="small" />
@@ -1185,206 +1230,215 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
         </Box>
       )}
 
-      <Popover
-        open={Boolean(anchorEl)}
-        anchorEl={anchorEl}
-        onClose={handleClose}
-        anchorOrigin={{
-          vertical: 'bottom',
-          horizontal: 'right',
-        }}
-        transformOrigin={{
-          vertical: 'top',
-          horizontal: 'right',
-        }}
-        disablePortal
-        container={elementRef.current}
-        slotProps={{
-          paper: {
-            sx: {
-              p: 2,
-              minWidth: 250,
-              maxWidth: 'none',
-              overflow: 'visible',
+      {Boolean(anchorEl) && initialMenuPosition && (
+        <Portal>
+          <Paper
+            ref={menuRef}
+            sx={{
+              position: 'fixed',
+              top: initialMenuPosition.top,
+              left: initialMenuPosition.left,
+              width: { 
+                xs: 'calc(100vw - 16px)',
+                sm: 'auto',
+                md: 'auto'
+              },
+              minWidth: {
+                xs: 'calc(100vw - 16px)',
+                sm: '280px',
+                md: '320px'
+              },
+              maxWidth: {
+                xs: 'calc(100vw - 16px)',
+                sm: '350px',
+                md: '400px'
+              },
+              bgcolor: 'background.paper',
               borderRadius: 1,
               boxShadow: 3,
-              mt: 1,
-              position: 'fixed',
-              top: 'auto',
-              left: 'auto',
-              transform: 'none'
-            }
-          }
-        }}
-        sx={{
-          position: 'fixed',
-          top: 'auto',
-          left: 'auto',
-          transform: 'none'
-        }}
-      >
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          {(type === 'text' || type === 'title') && (
-            <>
-              <FormControl size="small">
-                <InputLabel>Font Family</InputLabel>
-                <Select
-                  value={fontFamily}
-                  onChange={(e) => handleStyleChange({ fontFamily: e.target.value })}
-                  label="Font Family"
-                  MenuProps={selectMenuProps}
-                >
-                  {FONT_FAMILIES.map(font => (
-                    <MenuItem key={font} value={font}>{font}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
-              <FormControl size="small">
-                <InputLabel>Font Weight</InputLabel>
-                <Select
-                  value={fontWeight}
-                  onChange={(e) => handleStyleChange({ fontWeight: e.target.value })}
-                  label="Font Weight"
-                  MenuProps={selectMenuProps}
-                >
-                  {FONT_WEIGHTS.map(weight => (
-                    <MenuItem key={weight} value={weight}>{weight}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
-              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                <Typography variant="caption" sx={{ minWidth: 70 }}>Text Style</Typography>
-                <ToggleButtonGroup
-                  value={fontStyle === 'italic' ? 'italic' : 'normal'}
-                  exclusive
-                  onChange={handleFontStyleChange}
-                  aria-label="text style"
-                  size="small"
-                >
-                  <ToggleButton value="normal" aria-label="normal text">
-                    <TextFieldsIcon />
-                  </ToggleButton>
-                  <ToggleButton value="italic" aria-label="italic text">
-                    <FormatItalicIcon />
-                  </ToggleButton>
-                </ToggleButtonGroup>
-              </Box>
-
-              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                <Typography variant="caption" sx={{ minWidth: 70 }}>Alignment</Typography>
-                <ToggleButtonGroup
-                  value={textAlign}
-                  exclusive
-                  onChange={handleAlignChange}
-                  aria-label="text alignment"
-                  size="small"
-                >
-                  <ToggleButton value="left" aria-label="left aligned">
-                    <FormatAlignLeftIcon />
-                  </ToggleButton>
-                  <ToggleButton value="center" aria-label="center aligned">
-                    <FormatAlignCenterIcon />
-                  </ToggleButton>
-                  <ToggleButton value="right" aria-label="right aligned">
-                    <FormatAlignRightIcon />
-                  </ToggleButton>
-                </ToggleButtonGroup>
-              </Box>
-
-              <Box>
-                <Typography variant="caption">Font Size</Typography>
-                <Slider
-                  value={fontSize}
-                  onChange={(_, value) => handleStyleChange({ fontSize: value as number })}
-                  min={8}
-                  max={72}
-                  step={1}
-                  marks
-                  valueLabelDisplay="auto"
-                />
-              </Box>
-
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                <Typography variant="caption">Text Color</Typography>
-                <ColorPicker
-                  color={textColor || '#000000'}
-                  onChange={(color) => handleStyleChange({ textColor: color })}
-                />
-              </Box>
-            </>
-          )}
-
-          {(type === 'divider' || type === 'card') && (
-            <>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                <Typography variant="caption">Border Width</Typography>
-                <Slider
-                  value={borderWidth}
-                  onChange={(_, value) => handleStyleChange({ borderWidth: value as number })}
-                  min={1}
-                  max={10}
-                  step={1}
-                  marks
-                  valueLabelDisplay="auto"
-                />
-              </Box>
-
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                <Typography variant="caption">Border Color</Typography>
-                <ColorPicker
-                  color={borderColor}
-                  onChange={(color) => handleStyleChange({ borderColor: color })}
-                />
-              </Box>
-
-              <FormControl size="small">
-                <InputLabel>Border Style</InputLabel>
-                <Select
-                  value={borderStyle}
-                  onChange={(e) => handleStyleChange({ borderStyle: e.target.value })}
-                  label="Border Style"
-                  MenuProps={selectMenuProps}
-                >
-                  {BORDER_STYLES.map(style => (
-                    <MenuItem key={style} value={style}>{style}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
-              {type === 'divider' && (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  <Typography variant="caption">Divider Height</Typography>
-                  <Slider
-                    value={height}
-                    onChange={(_, value) => onResize(id, width, value as number)}
-                    min={1}
-                    max={20}
-                    step={1}
-                    marks
-                    valueLabelDisplay="auto"
-                  />
-                </Box>
-              )}
-
-              {type === 'card' && (
+              p: 2, // Reduced from p: 2
+              zIndex: 9999,
+              '& .MuiFormControl-root': {
+                width: '100%',
+                minHeight: 'auto',
+                marginBottom: '8px' // Reduced from 12px
+              },
+              '& .MuiInputBase-root': {
+                height: '36px' // Reduced from 40px
+              },
+              '& .MuiSelect-select': {
+                paddingTop: '6px',
+                paddingBottom: '6px',
+                height: '24px'
+              },
+              '& .MuiInputLabel-root': {
+                transform: 'translate(14px, 6px) scale(1)',
+                '&.Mui-focused, &.MuiFormLabel-filled': {
+                  transform: 'translate(14px, -9px) scale(0.75)'
+                }
+              },
+              '& .MuiSlider-root': {
+                padding: '8px 0',
+                marginTop: '4px',
+                marginBottom: '4px'
+              },
+              '& .MuiTypography-caption': {
+                fontSize: '0.75rem',
+                marginBottom: '2px'
+              },
+              '& .MuiBox-root': {
+                gap: 0.75 // Reduced from 1
+              },
+              '@media (max-width: 600px)': {
+                left: '8px !important',
+                right: '8px !important',
+                width: 'calc(100vw - 16px) !important'
+              }
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Box sx={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: 1.5, // Reduced from 2
+              '& > *': {
+                minHeight: 'unset'
+              },
+              '& .MuiFormControl-root': {
+                marginTop: 0
+              },
+              '& .MuiInputBase-root': {
+                minHeight: 'unset'
+              },
+              '& .MuiToggleButtonGroup-root': {
+                height: '32px' // Reduced from 36px
+              },
+              '& .MuiToggleButton-root': {
+                padding: '4px 8px' // Reduced from 6px 12px
+              },
+              '& .MuiSlider-root': {
+                marginTop: '4px',
+                marginBottom: '4px'
+              }
+            }}>
+              {(type === 'text' || type === 'title') && (
                 <>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                    <Typography variant="caption">Background Color</Typography>
-                    <ColorPicker
-                      color={backgroundColor}
-                      onChange={(color) => handleStyleChange({ backgroundColor: color })}
-                    />
+                  <FormControl size="small">
+                    <InputLabel>Font Family</InputLabel>
+                    <Select
+                      value={fontFamily}
+                      onChange={(e) => handleStyleChange({ fontFamily: e.target.value })}
+                      label="Font Family"
+                      MenuProps={selectMenuProps}
+                    >
+                      {FONT_FAMILIES.map(font => (
+                        <MenuItem key={font} value={font}>{font}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+
+                  <FormControl size="small">
+                    <InputLabel>Font Weight</InputLabel>
+                    <Select
+                      value={fontWeight}
+                      onChange={(e) => handleStyleChange({ fontWeight: e.target.value })}
+                      label="Font Weight"
+                      MenuProps={selectMenuProps}
+                    >
+                      {FONT_WEIGHTS.map(weight => (
+                        <MenuItem key={weight} value={weight}>{weight}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+
+                  <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', height: 32 }}>
+                    <Typography variant="caption" sx={{ minWidth: 70 }}>Text Style</Typography>
+                    <ToggleButtonGroup
+                      value={fontStyle === 'italic' ? 'italic' : 'normal'}
+                      exclusive
+                      onChange={handleFontStyleChange}
+                      aria-label="text style"
+                      size="small"
+                    >
+                      <ToggleButton value="normal" aria-label="normal text">
+                        <TextFieldsIcon />
+                      </ToggleButton>
+                      <ToggleButton value="italic" aria-label="italic text">
+                        <FormatItalicIcon />
+                      </ToggleButton>
+                    </ToggleButtonGroup>
                   </Box>
 
+                  <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', height: 32 }}>
+                    <Typography variant="caption" sx={{ minWidth: 70 }}>Alignment</Typography>
+                    <ToggleButtonGroup
+                      value={textAlign}
+                      exclusive
+                      onChange={handleAlignChange}
+                      aria-label="text alignment"
+                      size="small"
+                    >
+                      <ToggleButton value="left" aria-label="left aligned">
+                        <FormatAlignLeftIcon />
+                      </ToggleButton>
+                      <ToggleButton value="center" aria-label="center aligned">
+                        <FormatAlignCenterIcon />
+                      </ToggleButton>
+                      <ToggleButton value="right" aria-label="right aligned">
+                        <FormatAlignRightIcon />
+                      </ToggleButton>
+                    </ToggleButtonGroup>
+                  </Box>
+
+                  <Box sx={{ width: '100%', height: 45 }}>
+                    <Box sx={{ 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      alignItems: 'center',
+                      mb: 0.5
+                    }}>
+                      <Typography variant="caption">Font Size</Typography>
+                      <Typography variant="caption" sx={{ minWidth: 35, textAlign: 'right' }}>{fontSize}px</Typography>
+                    </Box>
+                    <Box sx={{ px: 0.5 }}>
+                      <Slider
+                        value={fontSize}
+                        onChange={(_, value) => handleStyleChange({ fontSize: value as number })}
+                        min={8}
+                        max={72}
+                        step={1}
+                        sx={{
+                          '& .MuiSlider-thumb': {
+                            width: 12,
+                            height: 12,
+                          },
+                          '& .MuiSlider-rail': {
+                            opacity: 0.3,
+                          }
+                        }}
+                      />
+                    </Box>
+                  </Box>
+
+                  <Box sx={{ width: '100%' }}>
+                    <Typography variant="caption" sx={{ display: 'block', mb: 0.5 }}>Text Color</Typography>
+                    <ColorPicker
+                      color={textColor || '#000000'}
+                      onChange={(color) => handleStyleChange({ textColor: color })}
+                    />
+                  </Box>
+                </>
+              )}
+
+              {(type === 'divider' || type === 'card') && (
+                <>
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                    <Typography variant="caption">Border Radius</Typography>
+                    <Typography variant="caption">Border Width</Typography>
                     <Slider
-                      value={borderRadius || 0}
-                      onChange={(_, value) => handleStyleChange({ borderRadius: value as number })}
-                      min={0}
-                      max={20}
+                      value={borderWidth}
+                      onChange={(_, value) => handleStyleChange({ borderWidth: value as number })}
+                      min={1}
+                      max={10}
                       step={1}
                       marks
                       valueLabelDisplay="auto"
@@ -1392,116 +1446,178 @@ const DraggableElement: React.FC<DraggableElementProps> = ({
                   </Box>
 
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                    <Typography variant="caption">Padding</Typography>
-                    <Slider
-                      value={padding || 0}
-                      onChange={(_, value) => handleStyleChange({ padding: value as number })}
-                      min={0}
-                      max={32}
-                      step={4}
-                      marks
-                      valueLabelDisplay="auto"
+                    <Typography variant="caption">Border Color</Typography>
+                    <ColorPicker
+                      color={borderColor}
+                      onChange={(color) => handleStyleChange({ borderColor: color })}
                     />
                   </Box>
 
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={shadow}
-                        onChange={(e) => handleStyleChange({ shadow: e.target.checked })}
+                  <FormControl size="small">
+                    <InputLabel>Border Style</InputLabel>
+                    <Select
+                      value={borderStyle}
+                      onChange={(e) => handleStyleChange({ borderStyle: e.target.value })}
+                      label="Border Style"
+                      MenuProps={selectMenuProps}
+                    >
+                      {BORDER_STYLES.map(style => (
+                        <MenuItem key={style} value={style}>{style}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+
+                  {type === 'divider' && (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <Typography variant="caption">Divider Height</Typography>
+                      <Slider
+                        value={height}
+                        onChange={(_, value) => onResize(id, width, value as number)}
+                        min={1}
+                        max={20}
+                        step={1}
+                        marks
+                        valueLabelDisplay="auto"
                       />
-                    }
-                    label="Shadow"
-                  />
+                    </Box>
+                  )}
+
+                  {type === 'card' && (
+                    <>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        <Typography variant="caption">Background Color</Typography>
+                        <ColorPicker
+                          color={backgroundColor}
+                          onChange={(color) => handleStyleChange({ backgroundColor: color })}
+                        />
+                      </Box>
+
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        <Typography variant="caption">Border Radius</Typography>
+                        <Slider
+                          value={borderRadius || 0}
+                          onChange={(_, value) => handleStyleChange({ borderRadius: value as number })}
+                          min={0}
+                          max={20}
+                          step={1}
+                          marks
+                          valueLabelDisplay="auto"
+                        />
+                      </Box>
+
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        <Typography variant="caption">Padding</Typography>
+                        <Slider
+                          value={padding || 0}
+                          onChange={(_, value) => handleStyleChange({ padding: value as number })}
+                          min={0}
+                          max={32}
+                          step={4}
+                          marks
+                          valueLabelDisplay="auto"
+                        />
+                      </Box>
+
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={shadow}
+                            onChange={(e) => handleStyleChange({ shadow: e.target.checked })}
+                          />
+                        }
+                        label="Shadow"
+                      />
+                    </>
+                  )}
                 </>
               )}
-            </>
-          )}
-          
-          {type === 'chart' && (
-            <>
-              <FormControl size="small">
-                <InputLabel>Chart Type</InputLabel>
-                <Select
-                  value={chartSettings.type}
-                  onChange={(e) => handleChartTypeChange(e.target.value as 'bar' | 'line' | 'pie' | 'doughnut')}
-                  label="Chart Type"
-                >
-                  <MenuItem value="bar">Bar</MenuItem>
-                  <MenuItem value="line">Line</MenuItem>
-                  <MenuItem value="pie">Pie</MenuItem>
-                  <MenuItem value="doughnut">Doughnut</MenuItem>
-                </Select>
-              </FormControl>
+              
+              {type === 'chart' && (
+                <>
+                  <FormControl size="small">
+                    <InputLabel>Chart Type</InputLabel>
+                    <Select
+                      value={chartSettings.type}
+                      onChange={(e) => handleChartTypeChange(e.target.value as 'bar' | 'line' | 'pie' | 'doughnut')}
+                      label="Chart Type"
+                    >
+                      <MenuItem value="bar">Bar</MenuItem>
+                      <MenuItem value="line">Line</MenuItem>
+                      <MenuItem value="pie">Pie</MenuItem>
+                      <MenuItem value="doughnut">Doughnut</MenuItem>
+                    </Select>
+                  </FormControl>
 
-              <TextField
-                size="small"
-                label="Labels (comma separated)"
-                value={chartSettings.labels.join(', ')}
-                onChange={(e) => handleChartLabelChange(e.target.value.split(',').map(label => label.trim()))}
-                fullWidth
-              />
+                  <TextField
+                    size="small"
+                    label="Labels (comma separated)"
+                    value={chartSettings.labels.join(', ')}
+                    onChange={(e) => handleChartLabelChange(e.target.value.split(',').map(label => label.trim()))}
+                    fullWidth
+                  />
 
-              {chartSettings.datasets.map((dataset, index) => {
-                // Ensure we have valid data before rendering
-                const dataValue = Array.isArray(dataset.data) 
-                  ? dataset.data.join(', ') 
-                  : typeof dataset.data === 'string'
-                    ? dataset.data
-                    : '';
+                  {chartSettings.datasets.map((dataset, index) => {
+                    // Ensure we have valid data before rendering
+                    const dataValue = Array.isArray(dataset.data) 
+                      ? dataset.data.join(', ') 
+                      : typeof dataset.data === 'string'
+                        ? dataset.data
+                        : '';
                     
-                return (
-                  <Box key={index} sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                    <Typography variant="caption">Dataset {index + 1}</Typography>
-                    <TextField
-                      size="small"
-                      label="Label"
-                      value={dataset.label || ''}
-                      onChange={(e) => handleChartDataChange(index, 'label', e.target.value)}
-                      fullWidth
-                    />
-                    <TextField
-                      size="small"
-                      label="Data (comma separated numbers)"
-                      value={dataValue}
-                      onChange={(e) => handleChartDataChange(index, 'data', e.target.value)}
-                      fullWidth
-                    />
-                  </Box>
-                );
-              })}
+                    return (
+                      <Box key={index} sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        <Typography variant="caption">Dataset {index + 1}</Typography>
+                        <TextField
+                          size="small"
+                          label="Label"
+                          value={dataset.label || ''}
+                          onChange={(e) => handleChartDataChange(index, 'label', e.target.value)}
+                          fullWidth
+                        />
+                        <TextField
+                          size="small"
+                          label="Data (comma separated numbers)"
+                          value={dataValue}
+                          onChange={(e) => handleChartDataChange(index, 'data', e.target.value)}
+                          fullWidth
+                        />
+                      </Box>
+                    );
+                  })}
 
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={() => {
-                  const newSettings = {
-                    ...chartSettings,
-                    datasets: [
-                      ...chartSettings.datasets,
-                      {
-                        label: `Dataset ${chartSettings.datasets.length + 1}`,
-                        data: chartSettings.labels.map(() => 0),
-                        backgroundColor: 'rgba(54, 162, 235, 0.5)',
-                        borderColor: 'rgba(54, 162, 235, 1)',
-                        borderWidth: 1
-                      }
-                    ]
-                  };
-                  setChartSettings(newSettings);
-                  onContentChange(id, JSON.stringify(newSettings));
-                }}
-              >
-                Add Dataset
-              </Button>
-            </>
-          )}
-          
-          <Typography variant="caption" sx={{ mt: 1, color: 'text.secondary' }}>
-            Tip: Use arrow keys for pixel-perfect positioning or press Delete to remove
-          </Typography>
-        </Box>
-      </Popover>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => {
+                      const newSettings = {
+                        ...chartSettings,
+                        datasets: [
+                          ...chartSettings.datasets,
+                          {
+                            label: `Dataset ${chartSettings.datasets.length + 1}`,
+                            data: chartSettings.labels.map(() => 0),
+                            backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                          }
+                        ]
+                      };
+                      setChartSettings(newSettings);
+                      onContentChange(id, JSON.stringify(newSettings));
+                    }}
+                  >
+                    Add Dataset
+                  </Button>
+                </>
+              )}
+              
+              <Typography variant="caption" sx={{ mt: 1, color: 'text.secondary' }}>
+                Tip: Use arrow keys for pixel-perfect positioning or press Delete to remove
+              </Typography>
+            </Box>
+          </Paper>
+        </Portal>
+      )}
     </Box>
   );
 };
